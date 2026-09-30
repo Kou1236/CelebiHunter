@@ -1,0 +1,22 @@
+Author: CelebiHunter contributors
+
+Version:
+    Major: 1
+    Minor: 0
+    Revision: 0
+
+Targets:
+    - 0x00172800
+
+Title: Reset
+
+Summary: Automated shiny reset hunt for English Crystal VC
+
+Description: |
+  Automates the title screen, Continue, shrine event, encounter check, and non-shiny reset.
+  Crystal's original RNG determines every encounter. No target Advance or DV combination is selected.
+  Stops on a verified shiny Celebi or when the user presses B. Creates no SD log.
+  Supports Old 3DS/2DS at 268 MHz and New 3DS/2DS at 268 or 804 MHz.
+
+Compatibility: Any
+MemorySize: 5MiB

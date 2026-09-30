@@ -1,0 +1,12 @@
+/build/
+/dist/
+/vendor/
+/.toolchain/
+/core/target/
+*.elf
+*.o
+*.a
+*.3gx
+__pycache__/
+.DS_Store
+Thumbs.db

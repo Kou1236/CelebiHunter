@@ -1,0 +1,21 @@
+Author: CelebiHunter contributors
+
+Version:
+    Major: 1
+    Minor: 0
+    Revision: 0
+
+Targets:
+    - 0x00172800
+
+Title: RNG
+
+Summary: Invisible fixed-FAAA RNG manipulation for English Crystal VC
+
+Description: |
+  The player performs every input. The plugin has no menu, HUD, automatic input, reset, or SD log.
+  At the Ilex Forest shrine it resolves Celebi's direct RNG reads to shiny DVs FAAA, then becomes inert.
+  Supports Old 3DS/2DS at 268 MHz and New 3DS/2DS at 268 or 804 MHz.
+
+Compatibility: Any
+MemorySize: 5MiB
