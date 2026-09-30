@@ -28,7 +28,7 @@ Choose Reset if you want the original `1/8192` hunt without pressing the same bu
 
 **RNG**
 
-Choose RNG if you simply want shiny Celebi as soon as possible. You still press every button yourself; the plugin fixes Celebi's DVs to `FAAA` when it is generated. This is not a traditional soft-reset hunt.
+Choose RNG if you simply want shiny Celebi as soon as possible. You still press every button yourself. The plugin does not search for or advance to a naturally occurring target frame; it controls the random values used when Celebi is generated, producing the shiny DV combination `FAAA`.
 
 **Install one build at a time.**
 
