@@ -1,5 +1,12 @@
 # CelebiHunter
 
+<p align="center">
+  <a href="https://github.com/Kou1236/CelebiHunter/releases/latest"><img src="https://img.shields.io/github/v/release/Kou1236/CelebiHunter?style=flat-square" alt="最新版本"></a>
+  <a href="https://github.com/Kou1236/CelebiHunter/actions/workflows/tests.yml"><img src="https://github.com/Kou1236/CelebiHunter/actions/workflows/tests.yml/badge.svg?branch=main" alt="自动测试"></a>
+  <a href="https://github.com/Kou1236/CelebiHunter/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Kou1236/CelebiHunter?style=flat-square" alt="许可证"></a>
+  <a href="https://github.com/Kou1236/CelebiHunter/releases"><img src="https://img.shields.io/github/downloads/Kou1236/CelebiHunter/total?style=flat-square" alt="下载量"></a>
+</p>
+
 面向在 Luma3DS 实机上游玩英文版 3DS Virtual Console《Pokémon Crystal Version》、希望获得闪光时拉比的玩家。CelebiHunter 提供全自动循环刷闪和玩家手动操作的 RNG 两种版本。
 
 [English](README.md)

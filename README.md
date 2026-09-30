@@ -1,5 +1,12 @@
 # CelebiHunter
 
+<p align="center">
+  <a href="https://github.com/Kou1236/CelebiHunter/releases/latest"><img src="https://img.shields.io/github/v/release/Kou1236/CelebiHunter?style=flat-square" alt="Latest release"></a>
+  <a href="https://github.com/Kou1236/CelebiHunter/actions/workflows/tests.yml"><img src="https://github.com/Kou1236/CelebiHunter/actions/workflows/tests.yml/badge.svg?branch=main" alt="Tests"></a>
+  <a href="https://github.com/Kou1236/CelebiHunter/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Kou1236/CelebiHunter?style=flat-square" alt="License"></a>
+  <a href="https://github.com/Kou1236/CelebiHunter/releases"><img src="https://img.shields.io/github/downloads/Kou1236/CelebiHunter/total?style=flat-square" alt="Downloads"></a>
+</p>
+
 For players hunting shiny Celebi in the English 3DS Virtual Console release of **Pokémon Crystal Version** on a console running Luma3DS. CelebiHunter provides an automatic reset hunt and a player-controlled RNG build.
 
 [简体中文](README.zh-CN.md)
