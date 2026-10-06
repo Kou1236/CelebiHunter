@@ -13,6 +13,11 @@ typedef struct {uint32_t address;uint8_t before,value,reserved[2];} RawEnvironme
 typedef struct {
     uint32_t stage,count,div_x;
     RawSourceCapture before;
+    /* The player's own StartTime is retained unchanged.  These bytes are the
+       temporary RTC inputs derived from it for the model's canonical guest
+       clock output. */
+    uint8_t preparation_start_time[4];
+    uint8_t preparation_rtc[5];
     RawEnvironmentWrite writes[RAW_ENV_MAX_WRITES];
     uint8_t state_identity[32];
     uint8_t identity[32];
@@ -25,6 +30,8 @@ typedef struct {
     /* Preparation owns time settings, never a prediction origin. INITIAL
        must capture a later released source and match the full CPU34. */
     uint32_t preparation_applied,preparation_counter;
+    uint8_t preparation_start_time[4];
+    uint8_t preparation_rtc[5];
     /* Original live refresh phase is part of the source identity. It is
        observed, never forced back to an old picture phase. */
     uint32_t source_bg;
@@ -43,7 +50,7 @@ typedef struct {
     int (*write_data_span)(void *,uint32_t,const uint8_t *,uint32_t);
 } RawEnvironmentOps;
 /* Build from this caller's full actual before image. PREPARATION is released,
-   with the guarded raw RTC policy, without source admission.
+   with a guarded RTC input derived from that save's StartTime, without source admission.
    INITIAL is released; after preparation it requires a later
    original released source and full selected CPU34. TERMINAL additionally
    binds the raw/effective scan receipts and three-call conditional prediction,

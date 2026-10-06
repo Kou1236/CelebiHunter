@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "runtime_sources": [
     "device_3ds.c",
     "job_mailbox.c",
@@ -157,8 +157,8 @@
     "environment_data.h": "55580d53ad2a625bb88e44cd1ca5d709fd928ab3cb52c0b0dddc025807240ead",
     "environment_session.c": "37aef5de777ae4d22ff5135c18d85baa4d2dfa70d45208fcf2418144017af66d",
     "environment_session.h": "d72a321bd49fe2f0e564a5c740251410d8d582ee62dcff7c5af14a000f3999ce",
-    "environment.c": "7803f6da60fdb35bc73a725729a56cdd1f53e5c348bb4f988766c6a46bb44f75",
-    "environment.h": "448d58c89236cb13f23bca4a2a6fb03747f414a6985c5c1a932a6edb1ce966ce",
+    "environment.c": "4830084a436f23b2f6796df91633a9fa2f26bb8614a76ee821432916fa0efb3a",
+    "environment.h": "669810f891df75fbf8362c2421628cfc5c445f91c3c09c55fc3978a099f738b2",
     "hud/framebuffer_hud.c": "e657e8362e9ba17dad536c6c087588ba4987c03aa73c974a730bf7b54770cc6b",
     "hud/framebuffer_hud.h": "ca48645b3b7a66c69a362bdb7477f70d6fb7e7084c3b2d976b3e9152eabbb703",
     "hud/paused_3ds.c": "239bd9e830bf25d328d52458efb24cbbb0c82f7bb86cf2b1f6bc0c5d5712dc44",
@@ -202,7 +202,7 @@
     "query_completion.c": "01e0158abd812693820838a00d67c0699141db517a5ac26ed0465c64f51a7528",
     "query_completion.h": "2b7c2c2244e113783ae87a2b790fa433445b2f1aefb0db7221f57e2a929771c2",
     "raw_bridge.S": "eb7f4caa3b8c1fa44c2178b1fcdedb74f13e90dab252c047c638571531e6619f",
-    "raw_hud.c": "e379c3828ef87f53542fbecb7f7a74805b84aba7f048fc5f119efd1821fb9e91",
+    "raw_hud.c": "c97962d590dbe298f1d90e3f2973e823fa73afebeaad564f8b1845d7e6e0d39f",
     "raw_runtime.c": "f2bb493b82ce7e59a058b6f287e57fcfd4df0e0aac63c8d87bbf2d8b2ca8c9d2",
     "raw_runtime.h": "7bed5bfaff5e4ffa63b4146a028c78a76e94e7cd7fd53537906842cd70f58275",
     "raw_service.c": "10bcd2f5655229c1ea37b6499544ebf4752c86372593fde866e9b70b30948e83",

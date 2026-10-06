@@ -41,7 +41,7 @@
 - Ilex Forest Shrine（桐树林神龛）GS Ball 时拉比事件
 - 已启用 Plugin Loader 的 Luma3DS
 - Reset v1.0.0：Old 3DS、Old 2DS、New 3DS、New 2DS，268 MHz、804 MHz
-- RNG v1.1.0：已在 New 3DS、268 MHz、Luma3DS 13.4 上实机测试
+- RNG v1.2.0：已在 New 3DS、268 MHz、Luma3DS 13.4 上实机测试
 
 主要测试环境：New 3DS、268 MHz、Luma3DS 13.4。RNG 版的其他机型、CPU 模式和 Luma3DS 版本尚未实测。欢迎通过 GitHub Issues 反馈实机测试结果。
 

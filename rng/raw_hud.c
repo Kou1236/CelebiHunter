@@ -28,7 +28,7 @@ void raw_runtime_hud(const RawRuntime *r,RawHud *h) {
     int forecast=r->encounter_started?r->encounter_candidate.status==MANUAL_QUERY_OK:target;
     char *p;
     memset(h,0,sizeof(*h));h->visible=r->controls.overlay_visible;
-    row(h,white,"CelebiHunter v1.1.0");
+    row(h,white,"CelebiHunter v1.2.1");
     p=row(h,white,"Advance ");
     if(r->counter_valid)p=number(p,r->counter);else p=text(p,"--");
     p=text(p," | Target ");

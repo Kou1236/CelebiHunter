@@ -2,15 +2,15 @@ Author: CelebiHunter contributors
 
 Version:
     Major: 1
-    Minor: 1
+    Minor: 2
     Revision: 0
 
 Targets:
     - 0x00172800
 
-Title: CelebiHunter v1.1.0
+Title: CelebiHunter v1.2.0
 
-Summary: Player-controlled Celebi RNG prediction for English Crystal VC
+Summary: Retained-environment DIV candidate prediction; hardware acceptance pending
 
 Description: |
   Finds shiny targets at the final GS Ball text and displays Advance, Target, predicted DVs and actual DVs.

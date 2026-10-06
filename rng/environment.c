@@ -5,11 +5,10 @@ static const uint32_t housekeeping[]={0x22f6e4};
 enum { RTC_INSTRUCTION=0x1aa528,
     PREPARATION_RTC=0x8a4418c,PREPARATION_LATCHED_RTC=0x22f684 };
 static const uint32_t RTC_ORIGINAL=0x0bfef301u,RTC_OWNED_NOP=0xe1a00000u;
-/* Independent preparation policy: only this retained StartTime class is
-   covered. Original GetClock/FixTime derives the guest clock after release.
-   These ten data bytes are outside the unchanged base environment profile. */
-static const uint8_t preparation_start_time[]={4,22,55,4};
-static const uint8_t preparation_rtc[]={3,31,21,67,0};
+/* The model is based on this guest-clock result.  StartTime itself belongs to
+   the player's save and is never changed; preparation derives a temporary
+   RTC input that makes FixTime produce the same result for that save. */
+static const uint8_t canonical_clock[]={7,26,20,72}; /* sec,min,hour,day */
 static const uint8_t selected_cpu_bytes[]={
     0x60,0x04,0xd5,0xc0,0x01,0x00,0x00,0x00,0x01,0x00,0x00,0x00,
     0x01,0x00,0x00,0x00,0x70,0x04,0x80,0x08,0x00,0x00,0x00,0x00,
@@ -25,7 +24,7 @@ static int byte(const RawSourceCapture *s,uint32_t a,uint8_t *out) {
 static uint32_t word_at(const RawSourceCapture *s,uint32_t a) {
     uint8_t b;uint32_t v=0,i;for(i=0;i<4;i++){if(!byte(s,a+i,&b))return UINT32_MAX;v|=(uint32_t)b<<(8*i);}return v;
 }
-static int desired(uint32_t address,uint32_t stage,uint8_t *value) {
+static int desired(uint32_t address,uint32_t stage,const uint8_t *prep_rtc,uint8_t *value) {
     uint32_t i;
     /* DIV is observed from the original engine, never a data-store target. */
     if(address==raw_environment_layout[2]+4)return 0;
@@ -34,11 +33,11 @@ static int desired(uint32_t address,uint32_t stage,uint8_t *value) {
         *value=(uint8_t)(RTC_OWNED_NOP>>(8*(address-RTC_INSTRUCTION)));return 1;
     }
     if(stage==RAW_ENV_PREPARATION) {
-        if(address>=PREPARATION_RTC&&address<PREPARATION_RTC+sizeof(preparation_rtc)) {
-            *value=preparation_rtc[address-PREPARATION_RTC];return 1;
+        if(address>=PREPARATION_RTC&&address<PREPARATION_RTC+5u&&prep_rtc) {
+            *value=prep_rtc[address-PREPARATION_RTC];return 1;
         }
-        if(address>=PREPARATION_LATCHED_RTC&&address<PREPARATION_LATCHED_RTC+sizeof(preparation_rtc)) {
-            *value=preparation_rtc[address-PREPARATION_LATCHED_RTC];return 1;
+        if(address>=PREPARATION_LATCHED_RTC&&address<PREPARATION_LATCHED_RTC+5u&&prep_rtc) {
+            *value=prep_rtc[address-PREPARATION_LATCHED_RTC];return 1;
         }
     }
     for(i=0;i<sizeof(housekeeping)/sizeof(housekeeping[0]);i++)
@@ -52,9 +51,9 @@ static int desired(uint32_t address,uint32_t stage,uint8_t *value) {
     return 0;
 }
 int raw_environment_data_address(uint32_t a){uint8_t value;
-    if((a>=PREPARATION_RTC&&a<PREPARATION_RTC+sizeof(preparation_rtc))||
-       (a>=PREPARATION_LATCHED_RTC&&a<PREPARATION_LATCHED_RTC+sizeof(preparation_rtc)))return 1;
-    return desired(a,RAW_ENV_TERMINAL,&value);
+    if((a>=PREPARATION_RTC&&a<PREPARATION_RTC+5u)||
+       (a>=PREPARATION_LATCHED_RTC&&a<PREPARATION_LATCHED_RTC+5u))return 1;
+    return desired(a,RAW_ENV_TERMINAL,0,&value);
 }
 static int cpu_bytes(const RawSourceCapture *s,uint8_t b[34]) {
     static const uint32_t regions[][2]={{0x22f5fc,4},{0x22f604,20},{0x22f62c,8},{0x22f764,1}};
@@ -77,15 +76,40 @@ static int preparation_cpu_match(const RawSourceCapture *s) {
     for(i=0;i<sizeof(b);i++)if((i<26||i>=32)&&b[i]!=selected_cpu_bytes[i])return 0;
     return 1;
 }
-static int preparation_time_class(const RawSourceCapture *s,int normalized) {
-    uint8_t v;uint32_t i;
+static int read_start_time(const RawSourceCapture *s,uint8_t out[4]) {
+    uint32_t i;
+    if(!s||!out)return 0;
+    for(i=0;i<4;i++)if(!byte(s,s->pointers[7]+0x4b6+i,&out[i]))return 0;
+    /* StartTime is day, hour, minute, second in Crystal's WRAM. */
+    return out[0]<140u&&out[1]<24u&&out[2]<60u&&out[3]<60u;
+}
+static uint8_t mod_u8(uint32_t v,uint32_t m){return (uint8_t)(v%m);}
+static int derive_preparation_rtc(const uint8_t start[4],uint8_t out[5]) {
+    uint32_t sum,carry_sec,carry_min,carry_hour;
+    uint8_t sec,min,hour,day;
+    if(!start||!out||start[0]>=140u||start[1]>=24u||start[2]>=60u||start[3]>=60u)return 0;
+    sec=mod_u8((uint32_t)canonical_clock[0]+60u-start[3],60u);
+    sum=(uint32_t)start[3]+sec;carry_sec=sum>=60u;
+    min=mod_u8((uint32_t)canonical_clock[1]+60u-start[2]-carry_sec,60u);
+    sum=(uint32_t)start[2]+min+carry_sec;carry_min=sum>=60u;
+    hour=mod_u8((uint32_t)canonical_clock[2]+24u-start[1]-carry_min,24u);
+    sum=(uint32_t)start[1]+hour+carry_min;carry_hour=sum>=24u;
+    day=mod_u8((uint32_t)canonical_clock[3]+140u-start[0]-carry_hour,140u);
+    out[0]=sec;out[1]=min;out[2]=hour;out[3]=day;out[4]=0;
+    return 1;
+}
+static int preparation_time_class(const RawSourceCapture *s,int normalized,const uint8_t expected_start[4],const uint8_t expected_rtc[5]) {
+    uint8_t v,start[4];uint32_t i;
     if(s->pointers[0]!=PREPARATION_RTC||s->pointers[1]!=PREPARATION_RTC+8||
        s->pointers[7]!=s->pointers[3]+4096)return 0;
-    for(i=0;i<sizeof(preparation_start_time);i++)
-        if(!byte(s,s->pointers[7]+0x4b6+i,&v)||v!=preparation_start_time[i])return 0;
-    if(normalized)for(i=0;i<sizeof(preparation_rtc);i++)
-        if(!byte(s,PREPARATION_RTC+i,&v)||v!=preparation_rtc[i]||
-           !byte(s,PREPARATION_LATCHED_RTC+i,&v)||v!=preparation_rtc[i])return 0;
+    if(!read_start_time(s,start))return 0;
+    if(expected_start&&memcmp(start,expected_start,4))return 0;
+    if(normalized) {
+        if(!expected_rtc)return 0;
+        for(i=0;i<5;i++)
+            if(!byte(s,PREPARATION_RTC+i,&v)||v!=expected_rtc[i]||
+               !byte(s,PREPARATION_LATCHED_RTC+i,&v)||v!=expected_rtc[i])return 0;
+    }
     return 1;
 }
 static int initial_rtc_state(const RawEnvironmentState *state,const RawSourceCapture *s) {
@@ -93,20 +117,20 @@ static int initial_rtc_state(const RawEnvironmentState *state,const RawSourceCap
     if(state->initial_applied||state->terminal_applied)return 0;
     if(state->preparation_applied)return state->rtc_owned&&state->epoch==s->epoch&&
         elapsed&&elapsed<0x80000000u&&word_at(s,RTC_INSTRUCTION)==RTC_OWNED_NOP&&
-        preparation_time_class(s,1);
+        preparation_time_class(s,1,state->preparation_start_time,state->preparation_rtc);
     return !state->rtc_owned&&word_at(s,RTC_INSTRUCTION)==RTC_ORIGINAL;
 }
 static int preparation_state(const RawEnvironmentState *state,const RawSourceCapture *s) {
     return !state->initial_applied&&!state->terminal_applied&&!state->rtc_owned&&
         !state->preparation_applied&&word_at(s,RTC_INSTRUCTION)==RTC_ORIGINAL&&
-        preparation_time_class(s,0);
+        preparation_time_class(s,0,0,0);
 }
 static int rebase_state(const RawEnvironmentState *state,const RawSourceCapture *s) {
     uint32_t elapsed=s->counter-state->origin_counter;
     return state->initial_applied&&!state->terminal_applied&&state->preparation_applied&&
         state->rtc_owned&&!state->poisoned&&state->epoch==s->epoch&&
         elapsed&&elapsed<0x80000000u&&word_at(s,RTC_INSTRUCTION)==RTC_OWNED_NOP&&
-        preparation_time_class(s,1);
+        preparation_time_class(s,1,state->preparation_start_time,state->preparation_rtc);
 }
 int raw_environment_initial_cpu_check(const ChReadOps *o) {
     static const uint32_t regions[][2]={{0x22f5fc,4},{0x22f604,20},{0x22f62c,8},{0x22f764,1}};
@@ -130,7 +154,7 @@ uint32_t raw_environment_initial_source_rejection(const RawEnvironmentPlan *p,co
     if(s->poisoned||s->initial_applied||s->terminal_applied)return RAW_ENV_SOURCE_STATE;
     if(p->stage==RAW_ENV_PREPARATION) {
         if(s->rtc_owned||s->preparation_applied)return RAW_ENV_SOURCE_STATE;
-        if(word_at(before,RTC_INSTRUCTION)!=RTC_ORIGINAL||!preparation_time_class(before,0))return RAW_ENV_SOURCE_RTC;
+        if(word_at(before,RTC_INSTRUCTION)!=RTC_ORIGINAL||!preparation_time_class(before,0,0,0))return RAW_ENV_SOURCE_RTC;
         if(!preparation_cpu_match(before))return RAW_ENV_SOURCE_CPU;
     } else {
         if((!s->preparation_applied&&s->rtc_owned)||(s->preparation_applied&&
@@ -184,6 +208,14 @@ int raw_environment_prepare(const RawEnvironmentOps *o,const ChNativeContext *c,
     if(!byte(s,s->pointers[6],&v)||v!=255||!byte(s,s->pointers[6]+15,&v)||v!=1)return RAW_ENV_REJECTED;
     if(!byte(s,s->pointers[5]+0x55,&v)||v>2)return RAW_ENV_REJECTED;
     if(stage==RAW_ENV_PREPARATION) {
+        if(!read_start_time(s,p->preparation_start_time)||
+           !derive_preparation_rtc(p->preparation_start_time,p->preparation_rtc))return RAW_ENV_REJECTED;
+    } else if(state->preparation_applied) {
+        memcpy(p->preparation_start_time,state->preparation_start_time,sizeof(p->preparation_start_time));
+        memcpy(p->preparation_rtc,state->preparation_rtc,sizeof(p->preparation_rtc));
+        if(!derive_preparation_rtc(p->preparation_start_time,p->preparation_rtc))return RAW_ENV_REJECTED;
+    }
+    if(stage==RAW_ENV_PREPARATION) {
         if(x!=183||!preparation_state(state,s)||!preparation_cpu_match(s))return RAW_ENV_REJECTED;
     } else if(stage==RAW_ENV_INITIAL) {
         if(x!=183||!initial_rtc_state(state,s)||!cpu_identity(s,digest)||
@@ -194,7 +226,7 @@ int raw_environment_prepare(const RawEnvironmentOps *o,const ChNativeContext *c,
     } else {
         if(!cpu_identity(s,digest)||!byte(s,s->pointers[6]+4,&v)||v!=x)return RAW_ENV_REJECTED;
         if(!state->initial_applied||state->terminal_applied||!state->rtc_owned||state->epoch!=epoch||
-            (state->preparation_applied&&!preparation_time_class(s,1))||
+            (state->preparation_applied&&!preparation_time_class(s,1,state->preparation_start_time,state->preparation_rtc))||
             word_at(s,0x1aa528)!=0xe1a00000||memcmp(digest,state->nonbudget_CPU_identity,32)||
             !prediction||prediction->abi!=MANUAL_PREDICTION_ABI||prediction->status!=MANUAL_QUERY_OK||
             prediction->source_epoch!=epoch||prediction->origin_counter!=state->origin_counter||
@@ -228,17 +260,17 @@ int raw_environment_prepare(const RawEnvironmentOps *o,const ChNativeContext *c,
     for(i=0;i<sizeof(raw_environment_rows)/sizeof(raw_environment_rows[0]);i++) {
         const RawEnvironmentRow *r=&raw_environment_rows[i];
         for(j=0;j<r->size;j++) {
-            if(!desired(r->address+j,stage,&v)||!add_write(p,r->address+j,v))return RAW_ENV_REJECTED;
+            if(!desired(r->address+j,stage,p->preparation_rtc,&v)||!add_write(p,r->address+j,v))return RAW_ENV_REJECTED;
         }
     }
     for(i=0;i<sizeof(housekeeping)/sizeof(housekeeping[0]);i++)
         if(!add_write(p,housekeeping[i],0))return RAW_ENV_REJECTED;
-    if(stage==RAW_ENV_PREPARATION)for(i=0;i<sizeof(preparation_rtc);i++) {
-        if(!desired(PREPARATION_RTC+i,stage,&v)||!add_write(p,PREPARATION_RTC+i,v)||
-           !desired(PREPARATION_LATCHED_RTC+i,stage,&v)||!add_write(p,PREPARATION_LATCHED_RTC+i,v))return RAW_ENV_REJECTED;
+    if(stage==RAW_ENV_PREPARATION)for(i=0;i<5;i++) {
+        if(!desired(PREPARATION_RTC+i,stage,p->preparation_rtc,&v)||!add_write(p,PREPARATION_RTC+i,v)||
+           !desired(PREPARATION_LATCHED_RTC+i,stage,p->preparation_rtc,&v)||!add_write(p,PREPARATION_LATCHED_RTC+i,v))return RAW_ENV_REJECTED;
     }
     if(stage==RAW_ENV_INITIAL||stage==RAW_ENV_PREPARATION)for(i=0;i<4;i++) {
-        if(!desired(0x1aa528+i,stage,&v)||!add_write(p,0x1aa528+i,v))return RAW_ENV_REJECTED;
+        if(!desired(0x1aa528+i,stage,p->preparation_rtc,&v)||!add_write(p,0x1aa528+i,v))return RAW_ENV_REJECTED;
     }
     /* Only clock rows and the guarded RTC policy are writable. Audio channels,
        APU/queue and VBlank/BGThird stay byte-exact to this live before image. */
@@ -327,7 +359,7 @@ static int preflight(const RawEnvironmentState *s,const RawEnvironmentPlan *p) {
         if(!byte(&p->before,p->before.pointers[6]+4,&v)||v!=p->div_x||
            !s->initial_applied||s->terminal_applied||!s->rtc_owned||s->epoch!=p->before.epoch||
            word_at(&p->before,RTC_INSTRUCTION)!=RTC_OWNED_NOP||
-           (s->preparation_applied&&!preparation_time_class(&p->before,1))||
+           (s->preparation_applied&&!preparation_time_class(&p->before,1,s->preparation_start_time,s->preparation_rtc))||
            !cpu_identity(&p->before,digest)||memcmp(digest,s->nonbudget_CPU_identity,32))return 0;
         if(s->source_bg>2||p->before.counter-s->origin_counter>MANUAL_MODEL_MAX_PRESS||
            !byte(&p->before,p->before.pointers[5]+0x55,&v)||
@@ -337,14 +369,14 @@ static int preflight(const RawEnvironmentState *s,const RawEnvironmentPlan *p) {
         if(r->offset>p->before.byte_count||r->size>p->before.byte_count-r->offset||
            (uint64_t)r->address+r->size>UINT64_C(0x100000000))return 0;}
     for(i=0;i<p->count;i++){const RawEnvironmentWrite *w=&p->writes[i];
-        if((i&&p->writes[i-1].address>=w->address)||!desired(w->address,p->stage,&v)||v!=w->value||
+        if((i&&p->writes[i-1].address>=w->address)||!desired(w->address,p->stage,p->preparation_rtc,&v)||v!=w->value||
            !byte(&p->before,w->address,&old)||old!=w->before||old==v)return 0;}
     /* Count each allowed address once; aliases/housekeeping overrides cannot
        omit a required byte from a recomputed or partially initialized plan. */
     for(i=0;i<sizeof(raw_environment_rows)/sizeof(raw_environment_rows[0]);i++) {
         const RawEnvironmentRow *r=&raw_environment_rows[i];
         for(j=0;j<r->size;j++) {
-            if(!desired(r->address+j,p->stage,&v)||!byte(&p->before,r->address+j,&old))return 0;
+            if(!desired(r->address+j,p->stage,p->preparation_rtc,&v)||!byte(&p->before,r->address+j,&old))return 0;
             if(v!=old)changed++;
         }
     }
@@ -354,15 +386,15 @@ static int preflight(const RawEnvironmentState *s,const RawEnvironmentPlan *p) {
             if(housekeeping[i]>=raw_environment_rows[j].address&&housekeeping[i]-raw_environment_rows[j].address<raw_environment_rows[j].size)covered=1;
         if(!covered){if(!byte(&p->before,housekeeping[i],&old))return 0;if(old)changed++;}
     }
-    if(p->stage==RAW_ENV_PREPARATION)for(i=0;i<sizeof(preparation_rtc);i++) {
-        if(!byte(&p->before,PREPARATION_RTC+i,&old)||!desired(PREPARATION_RTC+i,p->stage,&v))return 0;
+    if(p->stage==RAW_ENV_PREPARATION)for(i=0;i<5;i++) {
+        if(!byte(&p->before,PREPARATION_RTC+i,&old)||!desired(PREPARATION_RTC+i,p->stage,p->preparation_rtc,&v))return 0;
         if(old!=v)changed++;
         if(!byte(&p->before,PREPARATION_LATCHED_RTC+i,&old)||
-           !desired(PREPARATION_LATCHED_RTC+i,p->stage,&v))return 0;
+           !desired(PREPARATION_LATCHED_RTC+i,p->stage,p->preparation_rtc,&v))return 0;
         if(old!=v)changed++;
     }
     if(p->stage==RAW_ENV_INITIAL||p->stage==RAW_ENV_PREPARATION)for(i=0;i<4;i++) {
-        if(!byte(&p->before,0x1aa528+i,&old)||!desired(0x1aa528+i,p->stage,&v))return 0;
+        if(!byte(&p->before,0x1aa528+i,&old)||!desired(0x1aa528+i,p->stage,p->preparation_rtc,&v))return 0;
         if(old!=v)changed++;
     }
     return changed==p->count;
@@ -402,6 +434,8 @@ int raw_environment_apply(const RawEnvironmentOps *o,RawEnvironmentState *state,
     if(!compare_current(o,p,1))return rollback(o,state,p,p->count,rtc);
     if(p->stage==RAW_ENV_PREPARATION) {
         state->preparation_applied=1;state->preparation_counter=p->before.counter;
+        memcpy(state->preparation_start_time,p->preparation_start_time,sizeof(state->preparation_start_time));
+        memcpy(state->preparation_rtc,p->preparation_rtc,sizeof(state->preparation_rtc));
         state->rtc_owned=1;state->epoch=p->before.epoch;
     } else if(p->stage==RAW_ENV_INITIAL||p->stage==RAW_ENV_REBASE){state->initial_applied=1;state->rtc_owned=1;state->epoch=p->before.epoch;
         state->origin_counter=p->before.counter;memcpy(state->source_identity,p->before.identity,32);

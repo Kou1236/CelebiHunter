@@ -22,7 +22,7 @@ def sha(path: Path) -> str:
 
 def inventory() -> tuple[dict, dict[str, str]]:
     manifest = json.loads((RNG / "build_sources.json").read_bytes())
-    preflight.require(manifest["version"] == "1.1.0", "Wrong RNG source manifest version")
+    preflight.require(manifest["version"] == "1.2.0", "Wrong RNG source manifest version")
     runtime, loader = manifest["runtime_sources"], manifest["loader_sources"]
     preflight.require(len(runtime) == 34 and len(loader) == 3, "Expected 34 runtime and three loader sources")
     preflight.require(manifest["sources"] == runtime + loader and len(set(runtime + loader)) == 37,
