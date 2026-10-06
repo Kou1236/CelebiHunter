@@ -28,7 +28,9 @@
 
 **RNG**
 
-只想尽快拿到闪光时拉比，就选 RNG。所有按键仍由玩家自己操作。插件不会搜索或推进到自然目标帧，而是在时拉比生成时控制这次遭遇使用的随机值，使其得到 `FAAA` 闪光组合。
+想按预测的时机遇到闪光时拉比，就选 RNG。它在 [PokeReader](https://github.com/zaksabeast/PokeReader) 的时拉比 RNG 方法上做了改进，直接显示当前 Advance 和下一个闪光目标。你自己暂停、逐帧推进，再按 A 继续事件。
+
+只想尽快拿到闪光、不在意 RNG 流程的话，也可以选 [旧版 RNG v1.0.0](https://github.com/Kou1236/CelebiHunter/releases)。旧版会修改游戏读取到的 DIV 值，固定生成 `FAAA` 闪光组合。
 
 **一次只安装一个版本。**
 
@@ -38,10 +40,10 @@
 - Title ID：`0004000000172800`
 - Ilex Forest Shrine（桐树林神龛）GS Ball 时拉比事件
 - 已启用 Plugin Loader 的 Luma3DS
-- Old 3DS、Old 2DS、New 3DS、New 2DS
-- 268 MHz、804 MHz
+- Reset v1.0.0：Old 3DS、Old 2DS、New 3DS、New 2DS，268 MHz、804 MHz
+- RNG v1.1.0：已在 New 3DS、268 MHz、Luma3DS 13.4 上实机测试
 
-主要测试环境：New 3DS、268 MHz、Luma3DS 13.4。欢迎使用其他机型、CPU 模式或 Luma3DS 版本的玩家通过 GitHub Issues 反馈实机测试结果。
+主要测试环境：New 3DS、268 MHz、Luma3DS 13.4。RNG 版的其他机型、CPU 模式和 Luma3DS 版本尚未实测。欢迎通过 GitHub Issues 反馈实机测试结果。
 
 日版 Crystal 和其他宝可梦遭遇**暂未支持**，后续会考虑扩展。
 
@@ -75,7 +77,7 @@
 
 ## RNG
 
-RNG 没有操作界面，安装后照常游玩即可。
+到达 GS Ball 最终文本后，插件会自动寻找下一个闪光时机。透明悬浮窗会显示当前 Advance、目标 Target、预测 DV 和实际 DV。
 
 <p align="center">
   <img src="docs/images/rng-trigger.png" alt="GS Ball 事件文本" width="400">
@@ -83,12 +85,16 @@ RNG 没有操作界面，安装后照常游玩即可。
 
 1. 手动来到神龛并推进对话。
 2. 当 `[PLAYER] put in the GS BALL.` 完整显示时，松开 A。
-3. 再正常按一次 A，继续事件。
-4. 时拉比将以 `FAAA` 闪光 DVs 生成。
+3. 按 `Start + ↑` 显示或隐藏悬浮窗。
+4. 接近 Target 时，按 `L + R` 暂停，再按 `L` 逐帧推进。想继续正常运行时，按 `R`。
+5. 当 Advance 等于 Target 时，按 A 继续事件，松开 A，等时拉比出现。悬浮窗会显示这次遭遇的实际 DV。
+
+错过目标时，插件会寻找下一个闪光时机。等待过程中游戏状态改变，目标也可能更新，以悬浮窗当前显示的 Target 为准。按 A 后不要操作其他按键，等时拉比出现。
+
+工作原理详见 [RNG 的工作原理](#rng-的工作原理)。
 
 ### 传送到后续作品后
 
-- `FAAA` 代表攻击 15、防御 10、速度 10、特殊 10，HP DV 为 8，是第二世代的一种闪光组合。
 - 这些 DV 不会直接带到后续作品。
 - Poké Transporter 会给时拉比**五项 31**，剩下一项随机。
 - 第二世代没有性格。刚捕获且没有获得过经验的等级 30 时拉比会是 **Timid（胆小）**；传送前练过级则可能不同。
@@ -107,4 +113,22 @@ RNG 没有操作界面，安装后照常游玩即可。
 
 ## 许可
 
-CelebiHunter 采用 [GNU GPL v3.0 or later](LICENSE)。致谢见 [CREDITS.md](CREDITS.md)。
+CelebiHunter 采用 [GNU GPL v3.0 or later](LICENSE)。
+
+## RNG 的工作原理
+
+《Crystal》的 [`Random` 例程](https://github.com/pret/pokecrystal/blob/master/home/random.asm)会读取 Game Boy 的分频寄存器 `DIV`，用来更新 RNG 状态。RNG 版读取当前 RNG、DIV 和模拟器的计时状态，计算继续等待、按 A 后会生成什么 DV，再寻找其中的闪光时机。
+
+为了让过场的计时可以预测，插件会设置 RTC、GameTime、TIMA，并调整模拟器的执行计时，包括时钟预算和相位。这些设置会改变游戏的计时环境，但时拉比的生成仍沿用原游戏的遭遇流程。
+
+这一版以 PokeReader 的方法为基础，补充了计时状态的读取，并简化了搜索计算。参数读取和目标搜索都在插件内完成，不需要再等待索引或去网站查 Advance。时拉比出现后，实际 DV 也会显示在悬浮窗里。
+
+## 致谢
+
+感谢以下项目及其作者：
+
+- [PokeReader](https://github.com/zaksabeast/PokeReader) 和 [Pokémon RNG Guides](https://github.com/zaksabeast/PokemonRNGGuides)（zaksabeast）：游戏读取和时拉比 RNG 预测方法。
+- [pret/pokecrystal](https://github.com/pret/pokecrystal)：Crystal 反汇编源码和符号。
+- [Pan Docs](https://gbdev.io/pandocs/)（gbdev）：Game Boy 计时器和中断资料。
+- [Luma3DS](https://github.com/LumaTeam/Luma3DS)（LumaTeam）：3GX 插件加载器和 Rosalina 调试器。
+- [CTRPluginFramework](https://gitlab.com/thepixellizeross/ctrpluginframework)（The Pixellizer Group）与 [Blank Template](https://github.com/PabloMK7/CTRPluginFramework-BlankTemplate)（PabloMK7）：插件接口和 3GX 构建参考。

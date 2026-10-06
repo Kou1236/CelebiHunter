@@ -32,5 +32,5 @@ If you distribute a modified version:
 - state that the version was modified and give the date of the changes;
 - provide the corresponding source code for any distributed binaries;
 - credit CelebiHunter as the upstream project and link to the original repository;
-- keep the PokeReader attribution in [CREDITS.md](CREDITS.md);
+- keep the PokeReader attribution in the [README credits](README.md#credits);
 - do not present a modified build as an official CelebiHunter release.

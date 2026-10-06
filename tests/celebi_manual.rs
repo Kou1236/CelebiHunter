@@ -1,3 +1,6 @@
+// Historical tests for the pre-v1.1.0 RNG implementation in core/src/crystal/celebi_manual.rs.
+// Current RNG host regressions: python tests/run_rng_tests.py.
+
 #![allow(dead_code)]
 
 #[path = "../core/src/crystal/celebi_manual.rs"]

@@ -1,0 +1,2573 @@
+{
+  "fixture_kind": "saved host released-boundary timing trace",
+  "no_device": true,
+  "status": "passed256_native_integer_boundary_and_Normal_pair_checks",
+  "origin_clock": {
+    "DIV": 216,
+    "DIV_countdown": 39,
+    "timer_phase": 38,
+    "budget": 39
+  },
+  "actual_rows": [
+    {
+      "DIV": 234,
+      "DIV_countdown": 19,
+      "timer_phase": 146,
+      "budget": 19,
+      "Normal_pair": [
+        217,
+        217
+      ]
+    },
+    {
+      "DIV": 253,
+      "DIV_countdown": 63,
+      "timer_phase": 254,
+      "budget": 63,
+      "Normal_pair": [
+        235,
+        235
+      ]
+    },
+    {
+      "DIV": 15,
+      "DIV_countdown": 43,
+      "timer_phase": 106,
+      "budget": 43,
+      "Normal_pair": [
+        253,
+        254
+      ]
+    },
+    {
+      "DIV": 33,
+      "DIV_countdown": 23,
+      "timer_phase": 214,
+      "budget": 23,
+      "Normal_pair": [
+        16,
+        16
+      ]
+    },
+    {
+      "DIV": 51,
+      "DIV_countdown": 3,
+      "timer_phase": 66,
+      "budget": 3,
+      "Normal_pair": [
+        34,
+        34
+      ]
+    },
+    {
+      "DIV": 70,
+      "DIV_countdown": 47,
+      "timer_phase": 174,
+      "budget": 47,
+      "Normal_pair": [
+        52,
+        52
+      ]
+    },
+    {
+      "DIV": 88,
+      "DIV_countdown": 27,
+      "timer_phase": 26,
+      "budget": 27,
+      "Normal_pair": [
+        71,
+        71
+      ]
+    },
+    {
+      "DIV": 106,
+      "DIV_countdown": 7,
+      "timer_phase": 134,
+      "budget": 7,
+      "Normal_pair": [
+        89,
+        89
+      ]
+    },
+    {
+      "DIV": 125,
+      "DIV_countdown": 51,
+      "timer_phase": 242,
+      "budget": 51,
+      "Normal_pair": [
+        107,
+        107
+      ]
+    },
+    {
+      "DIV": 143,
+      "DIV_countdown": 31,
+      "timer_phase": 94,
+      "budget": 31,
+      "Normal_pair": [
+        126,
+        126
+      ]
+    },
+    {
+      "DIV": 161,
+      "DIV_countdown": 11,
+      "timer_phase": 202,
+      "budget": 11,
+      "Normal_pair": [
+        144,
+        144
+      ]
+    },
+    {
+      "DIV": 180,
+      "DIV_countdown": 55,
+      "timer_phase": 54,
+      "budget": 55,
+      "Normal_pair": [
+        162,
+        162
+      ]
+    },
+    {
+      "DIV": 198,
+      "DIV_countdown": 35,
+      "timer_phase": 162,
+      "budget": 35,
+      "Normal_pair": [
+        180,
+        181
+      ]
+    },
+    {
+      "DIV": 216,
+      "DIV_countdown": 15,
+      "timer_phase": 14,
+      "budget": 15,
+      "Normal_pair": [
+        199,
+        199
+      ]
+    },
+    {
+      "DIV": 235,
+      "DIV_countdown": 59,
+      "timer_phase": 122,
+      "budget": 59,
+      "Normal_pair": [
+        217,
+        217
+      ]
+    },
+    {
+      "DIV": 253,
+      "DIV_countdown": 39,
+      "timer_phase": 230,
+      "budget": 39,
+      "Normal_pair": [
+        235,
+        236
+      ]
+    },
+    {
+      "DIV": 15,
+      "DIV_countdown": 19,
+      "timer_phase": 82,
+      "budget": 19,
+      "Normal_pair": [
+        254,
+        254
+      ]
+    },
+    {
+      "DIV": 34,
+      "DIV_countdown": 63,
+      "timer_phase": 190,
+      "budget": 63,
+      "Normal_pair": [
+        16,
+        16
+      ]
+    },
+    {
+      "DIV": 52,
+      "DIV_countdown": 43,
+      "timer_phase": 42,
+      "budget": 43,
+      "Normal_pair": [
+        34,
+        35
+      ]
+    },
+    {
+      "DIV": 70,
+      "DIV_countdown": 23,
+      "timer_phase": 150,
+      "budget": 23,
+      "Normal_pair": [
+        53,
+        53
+      ]
+    },
+    {
+      "DIV": 88,
+      "DIV_countdown": 3,
+      "timer_phase": 2,
+      "budget": 3,
+      "Normal_pair": [
+        71,
+        71
+      ]
+    },
+    {
+      "DIV": 107,
+      "DIV_countdown": 47,
+      "timer_phase": 110,
+      "budget": 47,
+      "Normal_pair": [
+        89,
+        89
+      ]
+    },
+    {
+      "DIV": 125,
+      "DIV_countdown": 27,
+      "timer_phase": 218,
+      "budget": 27,
+      "Normal_pair": [
+        108,
+        108
+      ]
+    },
+    {
+      "DIV": 143,
+      "DIV_countdown": 7,
+      "timer_phase": 70,
+      "budget": 7,
+      "Normal_pair": [
+        126,
+        126
+      ]
+    },
+    {
+      "DIV": 162,
+      "DIV_countdown": 51,
+      "timer_phase": 178,
+      "budget": 51,
+      "Normal_pair": [
+        144,
+        144
+      ]
+    },
+    {
+      "DIV": 180,
+      "DIV_countdown": 31,
+      "timer_phase": 30,
+      "budget": 31,
+      "Normal_pair": [
+        163,
+        163
+      ]
+    },
+    {
+      "DIV": 198,
+      "DIV_countdown": 11,
+      "timer_phase": 138,
+      "budget": 11,
+      "Normal_pair": [
+        181,
+        181
+      ]
+    },
+    {
+      "DIV": 217,
+      "DIV_countdown": 55,
+      "timer_phase": 246,
+      "budget": 55,
+      "Normal_pair": [
+        199,
+        199
+      ]
+    },
+    {
+      "DIV": 235,
+      "DIV_countdown": 35,
+      "timer_phase": 98,
+      "budget": 35,
+      "Normal_pair": [
+        217,
+        218
+      ]
+    },
+    {
+      "DIV": 253,
+      "DIV_countdown": 15,
+      "timer_phase": 206,
+      "budget": 15,
+      "Normal_pair": [
+        236,
+        236
+      ]
+    },
+    {
+      "DIV": 16,
+      "DIV_countdown": 59,
+      "timer_phase": 58,
+      "budget": 59,
+      "Normal_pair": [
+        254,
+        254
+      ]
+    },
+    {
+      "DIV": 34,
+      "DIV_countdown": 39,
+      "timer_phase": 166,
+      "budget": 39,
+      "Normal_pair": [
+        16,
+        17
+      ]
+    },
+    {
+      "DIV": 52,
+      "DIV_countdown": 19,
+      "timer_phase": 18,
+      "budget": 19,
+      "Normal_pair": [
+        35,
+        35
+      ]
+    },
+    {
+      "DIV": 71,
+      "DIV_countdown": 63,
+      "timer_phase": 126,
+      "budget": 63,
+      "Normal_pair": [
+        53,
+        53
+      ]
+    },
+    {
+      "DIV": 89,
+      "DIV_countdown": 43,
+      "timer_phase": 234,
+      "budget": 43,
+      "Normal_pair": [
+        71,
+        72
+      ]
+    },
+    {
+      "DIV": 107,
+      "DIV_countdown": 23,
+      "timer_phase": 86,
+      "budget": 23,
+      "Normal_pair": [
+        90,
+        90
+      ]
+    },
+    {
+      "DIV": 125,
+      "DIV_countdown": 3,
+      "timer_phase": 194,
+      "budget": 3,
+      "Normal_pair": [
+        108,
+        108
+      ]
+    },
+    {
+      "DIV": 144,
+      "DIV_countdown": 47,
+      "timer_phase": 46,
+      "budget": 47,
+      "Normal_pair": [
+        126,
+        126
+      ]
+    },
+    {
+      "DIV": 162,
+      "DIV_countdown": 27,
+      "timer_phase": 154,
+      "budget": 27,
+      "Normal_pair": [
+        145,
+        145
+      ]
+    },
+    {
+      "DIV": 180,
+      "DIV_countdown": 7,
+      "timer_phase": 6,
+      "budget": 7,
+      "Normal_pair": [
+        163,
+        163
+      ]
+    },
+    {
+      "DIV": 199,
+      "DIV_countdown": 51,
+      "timer_phase": 114,
+      "budget": 51,
+      "Normal_pair": [
+        181,
+        181
+      ]
+    },
+    {
+      "DIV": 217,
+      "DIV_countdown": 31,
+      "timer_phase": 222,
+      "budget": 31,
+      "Normal_pair": [
+        200,
+        200
+      ]
+    },
+    {
+      "DIV": 235,
+      "DIV_countdown": 11,
+      "timer_phase": 74,
+      "budget": 11,
+      "Normal_pair": [
+        218,
+        218
+      ]
+    },
+    {
+      "DIV": 254,
+      "DIV_countdown": 55,
+      "timer_phase": 182,
+      "budget": 55,
+      "Normal_pair": [
+        236,
+        236
+      ]
+    },
+    {
+      "DIV": 16,
+      "DIV_countdown": 35,
+      "timer_phase": 34,
+      "budget": 35,
+      "Normal_pair": [
+        254,
+        255
+      ]
+    },
+    {
+      "DIV": 34,
+      "DIV_countdown": 15,
+      "timer_phase": 142,
+      "budget": 15,
+      "Normal_pair": [
+        17,
+        17
+      ]
+    },
+    {
+      "DIV": 53,
+      "DIV_countdown": 59,
+      "timer_phase": 250,
+      "budget": 59,
+      "Normal_pair": [
+        35,
+        35
+      ]
+    },
+    {
+      "DIV": 71,
+      "DIV_countdown": 39,
+      "timer_phase": 102,
+      "budget": 39,
+      "Normal_pair": [
+        53,
+        54
+      ]
+    },
+    {
+      "DIV": 89,
+      "DIV_countdown": 19,
+      "timer_phase": 210,
+      "budget": 19,
+      "Normal_pair": [
+        72,
+        72
+      ]
+    },
+    {
+      "DIV": 108,
+      "DIV_countdown": 63,
+      "timer_phase": 62,
+      "budget": 63,
+      "Normal_pair": [
+        90,
+        90
+      ]
+    },
+    {
+      "DIV": 126,
+      "DIV_countdown": 43,
+      "timer_phase": 170,
+      "budget": 43,
+      "Normal_pair": [
+        108,
+        109
+      ]
+    },
+    {
+      "DIV": 144,
+      "DIV_countdown": 23,
+      "timer_phase": 22,
+      "budget": 23,
+      "Normal_pair": [
+        127,
+        127
+      ]
+    },
+    {
+      "DIV": 162,
+      "DIV_countdown": 3,
+      "timer_phase": 130,
+      "budget": 3,
+      "Normal_pair": [
+        145,
+        145
+      ]
+    },
+    {
+      "DIV": 181,
+      "DIV_countdown": 47,
+      "timer_phase": 238,
+      "budget": 47,
+      "Normal_pair": [
+        163,
+        163
+      ]
+    },
+    {
+      "DIV": 199,
+      "DIV_countdown": 27,
+      "timer_phase": 90,
+      "budget": 27,
+      "Normal_pair": [
+        182,
+        182
+      ]
+    },
+    {
+      "DIV": 217,
+      "DIV_countdown": 7,
+      "timer_phase": 198,
+      "budget": 7,
+      "Normal_pair": [
+        200,
+        200
+      ]
+    },
+    {
+      "DIV": 236,
+      "DIV_countdown": 51,
+      "timer_phase": 50,
+      "budget": 51,
+      "Normal_pair": [
+        218,
+        218
+      ]
+    },
+    {
+      "DIV": 254,
+      "DIV_countdown": 31,
+      "timer_phase": 158,
+      "budget": 31,
+      "Normal_pair": [
+        237,
+        237
+      ]
+    },
+    {
+      "DIV": 16,
+      "DIV_countdown": 11,
+      "timer_phase": 10,
+      "budget": 11,
+      "Normal_pair": [
+        255,
+        255
+      ]
+    },
+    {
+      "DIV": 35,
+      "DIV_countdown": 55,
+      "timer_phase": 118,
+      "budget": 55,
+      "Normal_pair": [
+        17,
+        17
+      ]
+    },
+    {
+      "DIV": 53,
+      "DIV_countdown": 35,
+      "timer_phase": 226,
+      "budget": 35,
+      "Normal_pair": [
+        35,
+        36
+      ]
+    },
+    {
+      "DIV": 71,
+      "DIV_countdown": 15,
+      "timer_phase": 78,
+      "budget": 15,
+      "Normal_pair": [
+        54,
+        54
+      ]
+    },
+    {
+      "DIV": 90,
+      "DIV_countdown": 59,
+      "timer_phase": 186,
+      "budget": 59,
+      "Normal_pair": [
+        72,
+        72
+      ]
+    },
+    {
+      "DIV": 108,
+      "DIV_countdown": 39,
+      "timer_phase": 38,
+      "budget": 39,
+      "Normal_pair": [
+        90,
+        91
+      ]
+    },
+    {
+      "DIV": 126,
+      "DIV_countdown": 19,
+      "timer_phase": 146,
+      "budget": 19,
+      "Normal_pair": [
+        109,
+        109
+      ]
+    },
+    {
+      "DIV": 145,
+      "DIV_countdown": 63,
+      "timer_phase": 254,
+      "budget": 63,
+      "Normal_pair": [
+        127,
+        127
+      ]
+    },
+    {
+      "DIV": 163,
+      "DIV_countdown": 43,
+      "timer_phase": 106,
+      "budget": 43,
+      "Normal_pair": [
+        145,
+        146
+      ]
+    },
+    {
+      "DIV": 181,
+      "DIV_countdown": 23,
+      "timer_phase": 214,
+      "budget": 23,
+      "Normal_pair": [
+        164,
+        164
+      ]
+    },
+    {
+      "DIV": 199,
+      "DIV_countdown": 3,
+      "timer_phase": 66,
+      "budget": 3,
+      "Normal_pair": [
+        182,
+        182
+      ]
+    },
+    {
+      "DIV": 218,
+      "DIV_countdown": 47,
+      "timer_phase": 174,
+      "budget": 47,
+      "Normal_pair": [
+        200,
+        200
+      ]
+    },
+    {
+      "DIV": 236,
+      "DIV_countdown": 27,
+      "timer_phase": 26,
+      "budget": 27,
+      "Normal_pair": [
+        219,
+        219
+      ]
+    },
+    {
+      "DIV": 254,
+      "DIV_countdown": 7,
+      "timer_phase": 134,
+      "budget": 7,
+      "Normal_pair": [
+        237,
+        237
+      ]
+    },
+    {
+      "DIV": 17,
+      "DIV_countdown": 51,
+      "timer_phase": 242,
+      "budget": 51,
+      "Normal_pair": [
+        255,
+        255
+      ]
+    },
+    {
+      "DIV": 35,
+      "DIV_countdown": 31,
+      "timer_phase": 94,
+      "budget": 31,
+      "Normal_pair": [
+        18,
+        18
+      ]
+    },
+    {
+      "DIV": 53,
+      "DIV_countdown": 11,
+      "timer_phase": 202,
+      "budget": 11,
+      "Normal_pair": [
+        36,
+        36
+      ]
+    },
+    {
+      "DIV": 72,
+      "DIV_countdown": 55,
+      "timer_phase": 54,
+      "budget": 55,
+      "Normal_pair": [
+        54,
+        54
+      ]
+    },
+    {
+      "DIV": 90,
+      "DIV_countdown": 35,
+      "timer_phase": 162,
+      "budget": 35,
+      "Normal_pair": [
+        72,
+        73
+      ]
+    },
+    {
+      "DIV": 108,
+      "DIV_countdown": 15,
+      "timer_phase": 14,
+      "budget": 15,
+      "Normal_pair": [
+        91,
+        91
+      ]
+    },
+    {
+      "DIV": 127,
+      "DIV_countdown": 59,
+      "timer_phase": 122,
+      "budget": 59,
+      "Normal_pair": [
+        109,
+        109
+      ]
+    },
+    {
+      "DIV": 145,
+      "DIV_countdown": 39,
+      "timer_phase": 230,
+      "budget": 39,
+      "Normal_pair": [
+        127,
+        128
+      ]
+    },
+    {
+      "DIV": 163,
+      "DIV_countdown": 19,
+      "timer_phase": 82,
+      "budget": 19,
+      "Normal_pair": [
+        146,
+        146
+      ]
+    },
+    {
+      "DIV": 182,
+      "DIV_countdown": 63,
+      "timer_phase": 190,
+      "budget": 63,
+      "Normal_pair": [
+        164,
+        164
+      ]
+    },
+    {
+      "DIV": 200,
+      "DIV_countdown": 43,
+      "timer_phase": 42,
+      "budget": 43,
+      "Normal_pair": [
+        182,
+        183
+      ]
+    },
+    {
+      "DIV": 218,
+      "DIV_countdown": 23,
+      "timer_phase": 150,
+      "budget": 23,
+      "Normal_pair": [
+        201,
+        201
+      ]
+    },
+    {
+      "DIV": 236,
+      "DIV_countdown": 3,
+      "timer_phase": 2,
+      "budget": 3,
+      "Normal_pair": [
+        219,
+        219
+      ]
+    },
+    {
+      "DIV": 255,
+      "DIV_countdown": 47,
+      "timer_phase": 110,
+      "budget": 47,
+      "Normal_pair": [
+        237,
+        237
+      ]
+    },
+    {
+      "DIV": 17,
+      "DIV_countdown": 27,
+      "timer_phase": 218,
+      "budget": 27,
+      "Normal_pair": [
+        0,
+        0
+      ]
+    },
+    {
+      "DIV": 35,
+      "DIV_countdown": 7,
+      "timer_phase": 70,
+      "budget": 7,
+      "Normal_pair": [
+        18,
+        18
+      ]
+    },
+    {
+      "DIV": 54,
+      "DIV_countdown": 51,
+      "timer_phase": 178,
+      "budget": 51,
+      "Normal_pair": [
+        36,
+        36
+      ]
+    },
+    {
+      "DIV": 72,
+      "DIV_countdown": 31,
+      "timer_phase": 30,
+      "budget": 31,
+      "Normal_pair": [
+        55,
+        55
+      ]
+    },
+    {
+      "DIV": 90,
+      "DIV_countdown": 11,
+      "timer_phase": 138,
+      "budget": 11,
+      "Normal_pair": [
+        73,
+        73
+      ]
+    },
+    {
+      "DIV": 109,
+      "DIV_countdown": 55,
+      "timer_phase": 246,
+      "budget": 55,
+      "Normal_pair": [
+        91,
+        91
+      ]
+    },
+    {
+      "DIV": 127,
+      "DIV_countdown": 35,
+      "timer_phase": 98,
+      "budget": 35,
+      "Normal_pair": [
+        109,
+        110
+      ]
+    },
+    {
+      "DIV": 145,
+      "DIV_countdown": 15,
+      "timer_phase": 206,
+      "budget": 15,
+      "Normal_pair": [
+        128,
+        128
+      ]
+    },
+    {
+      "DIV": 164,
+      "DIV_countdown": 59,
+      "timer_phase": 58,
+      "budget": 59,
+      "Normal_pair": [
+        146,
+        146
+      ]
+    },
+    {
+      "DIV": 182,
+      "DIV_countdown": 39,
+      "timer_phase": 166,
+      "budget": 39,
+      "Normal_pair": [
+        164,
+        165
+      ]
+    },
+    {
+      "DIV": 200,
+      "DIV_countdown": 19,
+      "timer_phase": 18,
+      "budget": 19,
+      "Normal_pair": [
+        183,
+        183
+      ]
+    },
+    {
+      "DIV": 219,
+      "DIV_countdown": 63,
+      "timer_phase": 126,
+      "budget": 63,
+      "Normal_pair": [
+        201,
+        201
+      ]
+    },
+    {
+      "DIV": 237,
+      "DIV_countdown": 43,
+      "timer_phase": 234,
+      "budget": 43,
+      "Normal_pair": [
+        219,
+        220
+      ]
+    },
+    {
+      "DIV": 255,
+      "DIV_countdown": 23,
+      "timer_phase": 86,
+      "budget": 23,
+      "Normal_pair": [
+        238,
+        238
+      ]
+    },
+    {
+      "DIV": 17,
+      "DIV_countdown": 3,
+      "timer_phase": 194,
+      "budget": 3,
+      "Normal_pair": [
+        0,
+        0
+      ]
+    },
+    {
+      "DIV": 36,
+      "DIV_countdown": 47,
+      "timer_phase": 46,
+      "budget": 47,
+      "Normal_pair": [
+        18,
+        18
+      ]
+    },
+    {
+      "DIV": 54,
+      "DIV_countdown": 27,
+      "timer_phase": 154,
+      "budget": 27,
+      "Normal_pair": [
+        37,
+        37
+      ]
+    },
+    {
+      "DIV": 72,
+      "DIV_countdown": 7,
+      "timer_phase": 6,
+      "budget": 7,
+      "Normal_pair": [
+        55,
+        55
+      ]
+    },
+    {
+      "DIV": 91,
+      "DIV_countdown": 51,
+      "timer_phase": 114,
+      "budget": 51,
+      "Normal_pair": [
+        73,
+        73
+      ]
+    },
+    {
+      "DIV": 109,
+      "DIV_countdown": 31,
+      "timer_phase": 222,
+      "budget": 31,
+      "Normal_pair": [
+        92,
+        92
+      ]
+    },
+    {
+      "DIV": 127,
+      "DIV_countdown": 11,
+      "timer_phase": 74,
+      "budget": 11,
+      "Normal_pair": [
+        110,
+        110
+      ]
+    },
+    {
+      "DIV": 146,
+      "DIV_countdown": 55,
+      "timer_phase": 182,
+      "budget": 55,
+      "Normal_pair": [
+        128,
+        128
+      ]
+    },
+    {
+      "DIV": 164,
+      "DIV_countdown": 35,
+      "timer_phase": 34,
+      "budget": 35,
+      "Normal_pair": [
+        146,
+        147
+      ]
+    },
+    {
+      "DIV": 182,
+      "DIV_countdown": 15,
+      "timer_phase": 142,
+      "budget": 15,
+      "Normal_pair": [
+        165,
+        165
+      ]
+    },
+    {
+      "DIV": 201,
+      "DIV_countdown": 59,
+      "timer_phase": 250,
+      "budget": 59,
+      "Normal_pair": [
+        183,
+        183
+      ]
+    },
+    {
+      "DIV": 219,
+      "DIV_countdown": 39,
+      "timer_phase": 102,
+      "budget": 39,
+      "Normal_pair": [
+        201,
+        202
+      ]
+    },
+    {
+      "DIV": 237,
+      "DIV_countdown": 19,
+      "timer_phase": 210,
+      "budget": 19,
+      "Normal_pair": [
+        220,
+        220
+      ]
+    },
+    {
+      "DIV": 0,
+      "DIV_countdown": 63,
+      "timer_phase": 62,
+      "budget": 63,
+      "Normal_pair": [
+        238,
+        238
+      ]
+    },
+    {
+      "DIV": 18,
+      "DIV_countdown": 43,
+      "timer_phase": 170,
+      "budget": 43,
+      "Normal_pair": [
+        0,
+        1
+      ]
+    },
+    {
+      "DIV": 36,
+      "DIV_countdown": 23,
+      "timer_phase": 22,
+      "budget": 23,
+      "Normal_pair": [
+        19,
+        19
+      ]
+    },
+    {
+      "DIV": 54,
+      "DIV_countdown": 3,
+      "timer_phase": 130,
+      "budget": 3,
+      "Normal_pair": [
+        37,
+        37
+      ]
+    },
+    {
+      "DIV": 73,
+      "DIV_countdown": 47,
+      "timer_phase": 238,
+      "budget": 47,
+      "Normal_pair": [
+        55,
+        55
+      ]
+    },
+    {
+      "DIV": 91,
+      "DIV_countdown": 27,
+      "timer_phase": 90,
+      "budget": 27,
+      "Normal_pair": [
+        74,
+        74
+      ]
+    },
+    {
+      "DIV": 109,
+      "DIV_countdown": 7,
+      "timer_phase": 198,
+      "budget": 7,
+      "Normal_pair": [
+        92,
+        92
+      ]
+    },
+    {
+      "DIV": 128,
+      "DIV_countdown": 51,
+      "timer_phase": 50,
+      "budget": 51,
+      "Normal_pair": [
+        110,
+        110
+      ]
+    },
+    {
+      "DIV": 146,
+      "DIV_countdown": 31,
+      "timer_phase": 158,
+      "budget": 31,
+      "Normal_pair": [
+        129,
+        129
+      ]
+    },
+    {
+      "DIV": 164,
+      "DIV_countdown": 11,
+      "timer_phase": 10,
+      "budget": 11,
+      "Normal_pair": [
+        147,
+        147
+      ]
+    },
+    {
+      "DIV": 183,
+      "DIV_countdown": 55,
+      "timer_phase": 118,
+      "budget": 55,
+      "Normal_pair": [
+        165,
+        165
+      ]
+    },
+    {
+      "DIV": 201,
+      "DIV_countdown": 35,
+      "timer_phase": 226,
+      "budget": 35,
+      "Normal_pair": [
+        183,
+        184
+      ]
+    },
+    {
+      "DIV": 219,
+      "DIV_countdown": 15,
+      "timer_phase": 78,
+      "budget": 15,
+      "Normal_pair": [
+        202,
+        202
+      ]
+    },
+    {
+      "DIV": 238,
+      "DIV_countdown": 59,
+      "timer_phase": 186,
+      "budget": 59,
+      "Normal_pair": [
+        220,
+        220
+      ]
+    },
+    {
+      "DIV": 0,
+      "DIV_countdown": 39,
+      "timer_phase": 38,
+      "budget": 39,
+      "Normal_pair": [
+        238,
+        239
+      ]
+    },
+    {
+      "DIV": 18,
+      "DIV_countdown": 19,
+      "timer_phase": 146,
+      "budget": 19,
+      "Normal_pair": [
+        1,
+        1
+      ]
+    },
+    {
+      "DIV": 37,
+      "DIV_countdown": 63,
+      "timer_phase": 254,
+      "budget": 63,
+      "Normal_pair": [
+        19,
+        19
+      ]
+    },
+    {
+      "DIV": 55,
+      "DIV_countdown": 43,
+      "timer_phase": 106,
+      "budget": 43,
+      "Normal_pair": [
+        37,
+        38
+      ]
+    },
+    {
+      "DIV": 73,
+      "DIV_countdown": 23,
+      "timer_phase": 214,
+      "budget": 23,
+      "Normal_pair": [
+        56,
+        56
+      ]
+    },
+    {
+      "DIV": 91,
+      "DIV_countdown": 3,
+      "timer_phase": 66,
+      "budget": 3,
+      "Normal_pair": [
+        74,
+        74
+      ]
+    },
+    {
+      "DIV": 110,
+      "DIV_countdown": 47,
+      "timer_phase": 174,
+      "budget": 47,
+      "Normal_pair": [
+        92,
+        92
+      ]
+    },
+    {
+      "DIV": 128,
+      "DIV_countdown": 27,
+      "timer_phase": 26,
+      "budget": 27,
+      "Normal_pair": [
+        111,
+        111
+      ]
+    },
+    {
+      "DIV": 146,
+      "DIV_countdown": 7,
+      "timer_phase": 134,
+      "budget": 7,
+      "Normal_pair": [
+        129,
+        129
+      ]
+    },
+    {
+      "DIV": 165,
+      "DIV_countdown": 51,
+      "timer_phase": 242,
+      "budget": 51,
+      "Normal_pair": [
+        147,
+        147
+      ]
+    },
+    {
+      "DIV": 183,
+      "DIV_countdown": 31,
+      "timer_phase": 94,
+      "budget": 31,
+      "Normal_pair": [
+        166,
+        166
+      ]
+    },
+    {
+      "DIV": 201,
+      "DIV_countdown": 11,
+      "timer_phase": 202,
+      "budget": 11,
+      "Normal_pair": [
+        184,
+        184
+      ]
+    },
+    {
+      "DIV": 220,
+      "DIV_countdown": 55,
+      "timer_phase": 54,
+      "budget": 55,
+      "Normal_pair": [
+        202,
+        202
+      ]
+    },
+    {
+      "DIV": 238,
+      "DIV_countdown": 35,
+      "timer_phase": 162,
+      "budget": 35,
+      "Normal_pair": [
+        220,
+        221
+      ]
+    },
+    {
+      "DIV": 0,
+      "DIV_countdown": 15,
+      "timer_phase": 14,
+      "budget": 15,
+      "Normal_pair": [
+        239,
+        239
+      ]
+    },
+    {
+      "DIV": 19,
+      "DIV_countdown": 59,
+      "timer_phase": 122,
+      "budget": 59,
+      "Normal_pair": [
+        1,
+        1
+      ]
+    },
+    {
+      "DIV": 37,
+      "DIV_countdown": 39,
+      "timer_phase": 230,
+      "budget": 39,
+      "Normal_pair": [
+        19,
+        20
+      ]
+    },
+    {
+      "DIV": 55,
+      "DIV_countdown": 19,
+      "timer_phase": 82,
+      "budget": 19,
+      "Normal_pair": [
+        38,
+        38
+      ]
+    },
+    {
+      "DIV": 74,
+      "DIV_countdown": 63,
+      "timer_phase": 190,
+      "budget": 63,
+      "Normal_pair": [
+        56,
+        56
+      ]
+    },
+    {
+      "DIV": 92,
+      "DIV_countdown": 43,
+      "timer_phase": 42,
+      "budget": 43,
+      "Normal_pair": [
+        74,
+        75
+      ]
+    },
+    {
+      "DIV": 110,
+      "DIV_countdown": 23,
+      "timer_phase": 150,
+      "budget": 23,
+      "Normal_pair": [
+        93,
+        93
+      ]
+    },
+    {
+      "DIV": 128,
+      "DIV_countdown": 3,
+      "timer_phase": 2,
+      "budget": 3,
+      "Normal_pair": [
+        111,
+        111
+      ]
+    },
+    {
+      "DIV": 147,
+      "DIV_countdown": 47,
+      "timer_phase": 110,
+      "budget": 47,
+      "Normal_pair": [
+        129,
+        129
+      ]
+    },
+    {
+      "DIV": 165,
+      "DIV_countdown": 27,
+      "timer_phase": 218,
+      "budget": 27,
+      "Normal_pair": [
+        148,
+        148
+      ]
+    },
+    {
+      "DIV": 183,
+      "DIV_countdown": 7,
+      "timer_phase": 70,
+      "budget": 7,
+      "Normal_pair": [
+        166,
+        166
+      ]
+    },
+    {
+      "DIV": 202,
+      "DIV_countdown": 51,
+      "timer_phase": 178,
+      "budget": 51,
+      "Normal_pair": [
+        184,
+        184
+      ]
+    },
+    {
+      "DIV": 220,
+      "DIV_countdown": 31,
+      "timer_phase": 30,
+      "budget": 31,
+      "Normal_pair": [
+        203,
+        203
+      ]
+    },
+    {
+      "DIV": 238,
+      "DIV_countdown": 11,
+      "timer_phase": 138,
+      "budget": 11,
+      "Normal_pair": [
+        221,
+        221
+      ]
+    },
+    {
+      "DIV": 1,
+      "DIV_countdown": 55,
+      "timer_phase": 246,
+      "budget": 55,
+      "Normal_pair": [
+        239,
+        239
+      ]
+    },
+    {
+      "DIV": 19,
+      "DIV_countdown": 35,
+      "timer_phase": 98,
+      "budget": 35,
+      "Normal_pair": [
+        1,
+        2
+      ]
+    },
+    {
+      "DIV": 37,
+      "DIV_countdown": 15,
+      "timer_phase": 206,
+      "budget": 15,
+      "Normal_pair": [
+        20,
+        20
+      ]
+    },
+    {
+      "DIV": 56,
+      "DIV_countdown": 59,
+      "timer_phase": 58,
+      "budget": 59,
+      "Normal_pair": [
+        38,
+        38
+      ]
+    },
+    {
+      "DIV": 74,
+      "DIV_countdown": 39,
+      "timer_phase": 166,
+      "budget": 39,
+      "Normal_pair": [
+        56,
+        57
+      ]
+    },
+    {
+      "DIV": 92,
+      "DIV_countdown": 19,
+      "timer_phase": 18,
+      "budget": 19,
+      "Normal_pair": [
+        75,
+        75
+      ]
+    },
+    {
+      "DIV": 111,
+      "DIV_countdown": 63,
+      "timer_phase": 126,
+      "budget": 63,
+      "Normal_pair": [
+        93,
+        93
+      ]
+    },
+    {
+      "DIV": 129,
+      "DIV_countdown": 43,
+      "timer_phase": 234,
+      "budget": 43,
+      "Normal_pair": [
+        111,
+        112
+      ]
+    },
+    {
+      "DIV": 147,
+      "DIV_countdown": 23,
+      "timer_phase": 86,
+      "budget": 23,
+      "Normal_pair": [
+        130,
+        130
+      ]
+    },
+    {
+      "DIV": 165,
+      "DIV_countdown": 3,
+      "timer_phase": 194,
+      "budget": 3,
+      "Normal_pair": [
+        148,
+        148
+      ]
+    },
+    {
+      "DIV": 184,
+      "DIV_countdown": 47,
+      "timer_phase": 46,
+      "budget": 47,
+      "Normal_pair": [
+        166,
+        166
+      ]
+    },
+    {
+      "DIV": 202,
+      "DIV_countdown": 27,
+      "timer_phase": 154,
+      "budget": 27,
+      "Normal_pair": [
+        185,
+        185
+      ]
+    },
+    {
+      "DIV": 220,
+      "DIV_countdown": 7,
+      "timer_phase": 6,
+      "budget": 7,
+      "Normal_pair": [
+        203,
+        203
+      ]
+    },
+    {
+      "DIV": 239,
+      "DIV_countdown": 51,
+      "timer_phase": 114,
+      "budget": 51,
+      "Normal_pair": [
+        221,
+        221
+      ]
+    },
+    {
+      "DIV": 1,
+      "DIV_countdown": 31,
+      "timer_phase": 222,
+      "budget": 31,
+      "Normal_pair": [
+        240,
+        240
+      ]
+    },
+    {
+      "DIV": 19,
+      "DIV_countdown": 11,
+      "timer_phase": 74,
+      "budget": 11,
+      "Normal_pair": [
+        2,
+        2
+      ]
+    },
+    {
+      "DIV": 38,
+      "DIV_countdown": 55,
+      "timer_phase": 182,
+      "budget": 55,
+      "Normal_pair": [
+        20,
+        20
+      ]
+    },
+    {
+      "DIV": 56,
+      "DIV_countdown": 35,
+      "timer_phase": 34,
+      "budget": 35,
+      "Normal_pair": [
+        38,
+        39
+      ]
+    },
+    {
+      "DIV": 74,
+      "DIV_countdown": 15,
+      "timer_phase": 142,
+      "budget": 15,
+      "Normal_pair": [
+        57,
+        57
+      ]
+    },
+    {
+      "DIV": 93,
+      "DIV_countdown": 59,
+      "timer_phase": 250,
+      "budget": 59,
+      "Normal_pair": [
+        75,
+        75
+      ]
+    },
+    {
+      "DIV": 111,
+      "DIV_countdown": 39,
+      "timer_phase": 102,
+      "budget": 39,
+      "Normal_pair": [
+        93,
+        94
+      ]
+    },
+    {
+      "DIV": 129,
+      "DIV_countdown": 19,
+      "timer_phase": 210,
+      "budget": 19,
+      "Normal_pair": [
+        112,
+        112
+      ]
+    },
+    {
+      "DIV": 148,
+      "DIV_countdown": 63,
+      "timer_phase": 62,
+      "budget": 63,
+      "Normal_pair": [
+        130,
+        130
+      ]
+    },
+    {
+      "DIV": 166,
+      "DIV_countdown": 43,
+      "timer_phase": 170,
+      "budget": 43,
+      "Normal_pair": [
+        148,
+        149
+      ]
+    },
+    {
+      "DIV": 184,
+      "DIV_countdown": 23,
+      "timer_phase": 22,
+      "budget": 23,
+      "Normal_pair": [
+        167,
+        167
+      ]
+    },
+    {
+      "DIV": 202,
+      "DIV_countdown": 3,
+      "timer_phase": 130,
+      "budget": 3,
+      "Normal_pair": [
+        185,
+        185
+      ]
+    },
+    {
+      "DIV": 221,
+      "DIV_countdown": 47,
+      "timer_phase": 238,
+      "budget": 47,
+      "Normal_pair": [
+        203,
+        203
+      ]
+    },
+    {
+      "DIV": 239,
+      "DIV_countdown": 27,
+      "timer_phase": 90,
+      "budget": 27,
+      "Normal_pair": [
+        222,
+        222
+      ]
+    },
+    {
+      "DIV": 1,
+      "DIV_countdown": 7,
+      "timer_phase": 198,
+      "budget": 7,
+      "Normal_pair": [
+        240,
+        240
+      ]
+    },
+    {
+      "DIV": 20,
+      "DIV_countdown": 51,
+      "timer_phase": 50,
+      "budget": 51,
+      "Normal_pair": [
+        2,
+        2
+      ]
+    },
+    {
+      "DIV": 38,
+      "DIV_countdown": 31,
+      "timer_phase": 158,
+      "budget": 31,
+      "Normal_pair": [
+        21,
+        21
+      ]
+    },
+    {
+      "DIV": 56,
+      "DIV_countdown": 11,
+      "timer_phase": 10,
+      "budget": 11,
+      "Normal_pair": [
+        39,
+        39
+      ]
+    },
+    {
+      "DIV": 75,
+      "DIV_countdown": 55,
+      "timer_phase": 118,
+      "budget": 55,
+      "Normal_pair": [
+        57,
+        57
+      ]
+    },
+    {
+      "DIV": 93,
+      "DIV_countdown": 35,
+      "timer_phase": 226,
+      "budget": 35,
+      "Normal_pair": [
+        75,
+        76
+      ]
+    },
+    {
+      "DIV": 111,
+      "DIV_countdown": 15,
+      "timer_phase": 78,
+      "budget": 15,
+      "Normal_pair": [
+        94,
+        94
+      ]
+    },
+    {
+      "DIV": 130,
+      "DIV_countdown": 59,
+      "timer_phase": 186,
+      "budget": 59,
+      "Normal_pair": [
+        112,
+        112
+      ]
+    },
+    {
+      "DIV": 148,
+      "DIV_countdown": 39,
+      "timer_phase": 38,
+      "budget": 39,
+      "Normal_pair": [
+        130,
+        131
+      ]
+    },
+    {
+      "DIV": 166,
+      "DIV_countdown": 19,
+      "timer_phase": 146,
+      "budget": 19,
+      "Normal_pair": [
+        149,
+        149
+      ]
+    },
+    {
+      "DIV": 185,
+      "DIV_countdown": 63,
+      "timer_phase": 254,
+      "budget": 63,
+      "Normal_pair": [
+        167,
+        167
+      ]
+    },
+    {
+      "DIV": 203,
+      "DIV_countdown": 43,
+      "timer_phase": 106,
+      "budget": 43,
+      "Normal_pair": [
+        185,
+        186
+      ]
+    },
+    {
+      "DIV": 221,
+      "DIV_countdown": 23,
+      "timer_phase": 214,
+      "budget": 23,
+      "Normal_pair": [
+        204,
+        204
+      ]
+    },
+    {
+      "DIV": 239,
+      "DIV_countdown": 3,
+      "timer_phase": 66,
+      "budget": 3,
+      "Normal_pair": [
+        222,
+        222
+      ]
+    },
+    {
+      "DIV": 2,
+      "DIV_countdown": 47,
+      "timer_phase": 174,
+      "budget": 47,
+      "Normal_pair": [
+        240,
+        240
+      ]
+    },
+    {
+      "DIV": 20,
+      "DIV_countdown": 27,
+      "timer_phase": 26,
+      "budget": 27,
+      "Normal_pair": [
+        3,
+        3
+      ]
+    },
+    {
+      "DIV": 38,
+      "DIV_countdown": 7,
+      "timer_phase": 134,
+      "budget": 7,
+      "Normal_pair": [
+        21,
+        21
+      ]
+    },
+    {
+      "DIV": 57,
+      "DIV_countdown": 51,
+      "timer_phase": 242,
+      "budget": 51,
+      "Normal_pair": [
+        39,
+        39
+      ]
+    },
+    {
+      "DIV": 75,
+      "DIV_countdown": 31,
+      "timer_phase": 94,
+      "budget": 31,
+      "Normal_pair": [
+        58,
+        58
+      ]
+    },
+    {
+      "DIV": 93,
+      "DIV_countdown": 11,
+      "timer_phase": 202,
+      "budget": 11,
+      "Normal_pair": [
+        76,
+        76
+      ]
+    },
+    {
+      "DIV": 112,
+      "DIV_countdown": 55,
+      "timer_phase": 54,
+      "budget": 55,
+      "Normal_pair": [
+        94,
+        94
+      ]
+    },
+    {
+      "DIV": 130,
+      "DIV_countdown": 35,
+      "timer_phase": 162,
+      "budget": 35,
+      "Normal_pair": [
+        112,
+        113
+      ]
+    },
+    {
+      "DIV": 148,
+      "DIV_countdown": 15,
+      "timer_phase": 14,
+      "budget": 15,
+      "Normal_pair": [
+        131,
+        131
+      ]
+    },
+    {
+      "DIV": 167,
+      "DIV_countdown": 59,
+      "timer_phase": 122,
+      "budget": 59,
+      "Normal_pair": [
+        149,
+        149
+      ]
+    },
+    {
+      "DIV": 185,
+      "DIV_countdown": 39,
+      "timer_phase": 230,
+      "budget": 39,
+      "Normal_pair": [
+        167,
+        168
+      ]
+    },
+    {
+      "DIV": 203,
+      "DIV_countdown": 19,
+      "timer_phase": 82,
+      "budget": 19,
+      "Normal_pair": [
+        186,
+        186
+      ]
+    },
+    {
+      "DIV": 222,
+      "DIV_countdown": 63,
+      "timer_phase": 190,
+      "budget": 63,
+      "Normal_pair": [
+        204,
+        204
+      ]
+    },
+    {
+      "DIV": 240,
+      "DIV_countdown": 43,
+      "timer_phase": 42,
+      "budget": 43,
+      "Normal_pair": [
+        222,
+        223
+      ]
+    },
+    {
+      "DIV": 2,
+      "DIV_countdown": 23,
+      "timer_phase": 150,
+      "budget": 23,
+      "Normal_pair": [
+        241,
+        241
+      ]
+    },
+    {
+      "DIV": 20,
+      "DIV_countdown": 3,
+      "timer_phase": 2,
+      "budget": 3,
+      "Normal_pair": [
+        3,
+        3
+      ]
+    },
+    {
+      "DIV": 39,
+      "DIV_countdown": 47,
+      "timer_phase": 110,
+      "budget": 47,
+      "Normal_pair": [
+        21,
+        21
+      ]
+    },
+    {
+      "DIV": 57,
+      "DIV_countdown": 27,
+      "timer_phase": 218,
+      "budget": 27,
+      "Normal_pair": [
+        40,
+        40
+      ]
+    },
+    {
+      "DIV": 75,
+      "DIV_countdown": 7,
+      "timer_phase": 70,
+      "budget": 7,
+      "Normal_pair": [
+        58,
+        58
+      ]
+    },
+    {
+      "DIV": 94,
+      "DIV_countdown": 51,
+      "timer_phase": 178,
+      "budget": 51,
+      "Normal_pair": [
+        76,
+        76
+      ]
+    },
+    {
+      "DIV": 112,
+      "DIV_countdown": 31,
+      "timer_phase": 30,
+      "budget": 31,
+      "Normal_pair": [
+        95,
+        95
+      ]
+    },
+    {
+      "DIV": 130,
+      "DIV_countdown": 11,
+      "timer_phase": 138,
+      "budget": 11,
+      "Normal_pair": [
+        113,
+        113
+      ]
+    },
+    {
+      "DIV": 149,
+      "DIV_countdown": 55,
+      "timer_phase": 246,
+      "budget": 55,
+      "Normal_pair": [
+        131,
+        131
+      ]
+    },
+    {
+      "DIV": 167,
+      "DIV_countdown": 35,
+      "timer_phase": 98,
+      "budget": 35,
+      "Normal_pair": [
+        149,
+        150
+      ]
+    },
+    {
+      "DIV": 185,
+      "DIV_countdown": 15,
+      "timer_phase": 206,
+      "budget": 15,
+      "Normal_pair": [
+        168,
+        168
+      ]
+    },
+    {
+      "DIV": 204,
+      "DIV_countdown": 59,
+      "timer_phase": 58,
+      "budget": 59,
+      "Normal_pair": [
+        186,
+        186
+      ]
+    },
+    {
+      "DIV": 222,
+      "DIV_countdown": 39,
+      "timer_phase": 166,
+      "budget": 39,
+      "Normal_pair": [
+        204,
+        205
+      ]
+    },
+    {
+      "DIV": 240,
+      "DIV_countdown": 19,
+      "timer_phase": 18,
+      "budget": 19,
+      "Normal_pair": [
+        223,
+        223
+      ]
+    },
+    {
+      "DIV": 3,
+      "DIV_countdown": 63,
+      "timer_phase": 126,
+      "budget": 63,
+      "Normal_pair": [
+        241,
+        241
+      ]
+    },
+    {
+      "DIV": 21,
+      "DIV_countdown": 43,
+      "timer_phase": 234,
+      "budget": 43,
+      "Normal_pair": [
+        3,
+        4
+      ]
+    },
+    {
+      "DIV": 39,
+      "DIV_countdown": 23,
+      "timer_phase": 86,
+      "budget": 23,
+      "Normal_pair": [
+        22,
+        22
+      ]
+    },
+    {
+      "DIV": 57,
+      "DIV_countdown": 3,
+      "timer_phase": 194,
+      "budget": 3,
+      "Normal_pair": [
+        40,
+        40
+      ]
+    },
+    {
+      "DIV": 76,
+      "DIV_countdown": 47,
+      "timer_phase": 46,
+      "budget": 47,
+      "Normal_pair": [
+        58,
+        58
+      ]
+    },
+    {
+      "DIV": 94,
+      "DIV_countdown": 27,
+      "timer_phase": 154,
+      "budget": 27,
+      "Normal_pair": [
+        77,
+        77
+      ]
+    },
+    {
+      "DIV": 112,
+      "DIV_countdown": 7,
+      "timer_phase": 6,
+      "budget": 7,
+      "Normal_pair": [
+        95,
+        95
+      ]
+    },
+    {
+      "DIV": 131,
+      "DIV_countdown": 51,
+      "timer_phase": 114,
+      "budget": 51,
+      "Normal_pair": [
+        113,
+        113
+      ]
+    },
+    {
+      "DIV": 149,
+      "DIV_countdown": 31,
+      "timer_phase": 222,
+      "budget": 31,
+      "Normal_pair": [
+        132,
+        132
+      ]
+    },
+    {
+      "DIV": 167,
+      "DIV_countdown": 11,
+      "timer_phase": 74,
+      "budget": 11,
+      "Normal_pair": [
+        150,
+        150
+      ]
+    },
+    {
+      "DIV": 186,
+      "DIV_countdown": 55,
+      "timer_phase": 182,
+      "budget": 55,
+      "Normal_pair": [
+        168,
+        168
+      ]
+    },
+    {
+      "DIV": 204,
+      "DIV_countdown": 35,
+      "timer_phase": 34,
+      "budget": 35,
+      "Normal_pair": [
+        186,
+        187
+      ]
+    },
+    {
+      "DIV": 222,
+      "DIV_countdown": 15,
+      "timer_phase": 142,
+      "budget": 15,
+      "Normal_pair": [
+        205,
+        205
+      ]
+    },
+    {
+      "DIV": 241,
+      "DIV_countdown": 59,
+      "timer_phase": 250,
+      "budget": 59,
+      "Normal_pair": [
+        223,
+        223
+      ]
+    },
+    {
+      "DIV": 3,
+      "DIV_countdown": 39,
+      "timer_phase": 102,
+      "budget": 39,
+      "Normal_pair": [
+        241,
+        242
+      ]
+    },
+    {
+      "DIV": 21,
+      "DIV_countdown": 19,
+      "timer_phase": 210,
+      "budget": 19,
+      "Normal_pair": [
+        4,
+        4
+      ]
+    },
+    {
+      "DIV": 40,
+      "DIV_countdown": 63,
+      "timer_phase": 62,
+      "budget": 63,
+      "Normal_pair": [
+        22,
+        22
+      ]
+    },
+    {
+      "DIV": 58,
+      "DIV_countdown": 43,
+      "timer_phase": 170,
+      "budget": 43,
+      "Normal_pair": [
+        40,
+        41
+      ]
+    },
+    {
+      "DIV": 76,
+      "DIV_countdown": 23,
+      "timer_phase": 22,
+      "budget": 23,
+      "Normal_pair": [
+        59,
+        59
+      ]
+    },
+    {
+      "DIV": 94,
+      "DIV_countdown": 3,
+      "timer_phase": 130,
+      "budget": 3,
+      "Normal_pair": [
+        77,
+        77
+      ]
+    },
+    {
+      "DIV": 113,
+      "DIV_countdown": 47,
+      "timer_phase": 238,
+      "budget": 47,
+      "Normal_pair": [
+        95,
+        95
+      ]
+    },
+    {
+      "DIV": 131,
+      "DIV_countdown": 27,
+      "timer_phase": 90,
+      "budget": 27,
+      "Normal_pair": [
+        114,
+        114
+      ]
+    },
+    {
+      "DIV": 149,
+      "DIV_countdown": 7,
+      "timer_phase": 198,
+      "budget": 7,
+      "Normal_pair": [
+        132,
+        132
+      ]
+    },
+    {
+      "DIV": 168,
+      "DIV_countdown": 51,
+      "timer_phase": 50,
+      "budget": 51,
+      "Normal_pair": [
+        150,
+        150
+      ]
+    },
+    {
+      "DIV": 186,
+      "DIV_countdown": 31,
+      "timer_phase": 158,
+      "budget": 31,
+      "Normal_pair": [
+        169,
+        169
+      ]
+    },
+    {
+      "DIV": 204,
+      "DIV_countdown": 11,
+      "timer_phase": 10,
+      "budget": 11,
+      "Normal_pair": [
+        187,
+        187
+      ]
+    },
+    {
+      "DIV": 223,
+      "DIV_countdown": 55,
+      "timer_phase": 118,
+      "budget": 55,
+      "Normal_pair": [
+        205,
+        205
+      ]
+    },
+    {
+      "DIV": 241,
+      "DIV_countdown": 35,
+      "timer_phase": 226,
+      "budget": 35,
+      "Normal_pair": [
+        223,
+        224
+      ]
+    },
+    {
+      "DIV": 3,
+      "DIV_countdown": 15,
+      "timer_phase": 78,
+      "budget": 15,
+      "Normal_pair": [
+        242,
+        242
+      ]
+    },
+    {
+      "DIV": 22,
+      "DIV_countdown": 59,
+      "timer_phase": 186,
+      "budget": 59,
+      "Normal_pair": [
+        4,
+        4
+      ]
+    },
+    {
+      "DIV": 40,
+      "DIV_countdown": 39,
+      "timer_phase": 38,
+      "budget": 39,
+      "Normal_pair": [
+        22,
+        23
+      ]
+    }
+  ]
+}
