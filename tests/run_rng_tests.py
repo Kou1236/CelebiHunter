@@ -1,4 +1,4 @@
-"""Run the RNG v1.1.0 host regressions with a C99 compiler.
+"""Run the RNG v1.2.0 host regressions with a C99 compiler.
 
 Use CC (or --cc) for gcc/clang, or ZIG (or --zig) for `zig cc`.
 The copied C scenarios and Python scalar/native-fixture assertions keep their

@@ -84,7 +84,7 @@ static void hud_dv_fields(const RawHud *h,int predicted_valid,uint32_t predicted
 static void hud_excludes_old_input_failure(const RawHud *h) {
     uint32_t i;
     CHECK(h->count<=7);
-    CHECK(!strcmp(h->line[0],"CelebiHunter v1.1.0"));
+    CHECK(!strcmp(h->line[0],"CelebiHunter v1.2.0"));
     CHECK(!strcmp(h->line[h->count-1],"Start+Up: show/hide HUD"));
     for(i=0;i<h->count;i++){
         CHECK(strlen(h->line[i])<=50u);
@@ -374,7 +374,7 @@ static void test_player_paused_ready_A_resumes_and_observes_release(void) {
     CHECK(!r.input_plan.manual_hardware_verified);
     raw_runtime_actual_dv(&r,(uint16_t)r.encounter_candidate.predicted_dv);
     raw_runtime_hud(&r,&h);hud_excludes_old_input_failure(&h);
-    CHECK(hud_has(&h,"CelebiHunter v1.1.0"));
+    CHECK(hud_has(&h,"CelebiHunter v1.2.0"));
     hud_dv_fields(&h,1,r.encounter_candidate.predicted_dv,1,r.encounter_candidate.predicted_dv);
 }
 static void test_player_leaves_prompt(void) {
