@@ -33,7 +33,7 @@ def main() -> None:
     checksum_path = DIST / "SHA256SUMS.txt"
     checksum_path.write_text(checksums, encoding="ascii")
 
-    archive = DIST / "CelebiHunter-v1.2.0.zip"
+    archive = DIST / "CelebiHunter-v1.3.0.zip"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as output:
         for name in BINARIES:
             output.write(DIST / name, name)

@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.3.0
+
+### RNG
+
+- Stop pinning source admission to one captured CPU/timer image; retain structural scheduler-budget checks and read the live DIV through the current IO pointer.
+- Keep each save's StartTime unchanged and derive the temporary RTC input from its value.
+- Accept relocated engine and WRAM objects when their live pointers pass coherent layout checks.
+- Bind later observations to the current session's captured CPU context.
+- Revalidate a released source after a transient running scheduler mismatch instead of permanently losing the forecast.
+- Show a specific HUD message when no future target is available.
+- Add stable reason codes for scene, scheduler, timing, search, and runtime checks; retain live values, failed reads, and retry history in diagnostic record v5.
+- Recover the source when an active input plan encounters a temporary scheduler change.
+- Allow an ordinary encounter without a forecast and report off-target A separately from source failures.
+- Retry read-only acquisition failures with a bounded delay and distinguish transient rechecks from persistent faults.
+- Validate save-time conversion against the original clock arithmetic; report unrepresentable offsets explicitly.
+- Accept normal previous-battle data at the shrine; verify the original post-generation call chain before reading this encounter's actual DVs.
+
 ## v1.1.0
 
 ### RNG

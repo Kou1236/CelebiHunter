@@ -50,8 +50,9 @@ int ch_sample_boundary(const ChReadOps *o, ChBoundarySample *out) {
     /* Compare only initialized, complete snapshots; padding is zero-filled. */
     out->coherent=(uint8_t)(memcmp(&a,&b,sizeof(a))==0);
     if(!out->coherent)return CH_SAMPLE_INCOHERENT;
-    out->ordinary_supported=(uint8_t)(a.engine_pointer==0x0027be7cu&&
-        a.engine_type==1u&&a.recording_gate==0u&&a.queued_tasks==0u&&
+    /* The engine object can move with host allocation. once() has already
+       checked alignment, readability and stability across both snapshots. */
+    out->ordinary_supported=(uint8_t)(a.engine_type==1u&&a.recording_gate==0u&&a.queued_tasks==0u&&
         a.engine_mode==0u&&a.engine_flags==0u&&a.batch_count==1u&&
         a.host_phase==0u&&a.selected_config_mode==0u&&a.input_enable==0u);
     return out->ordinary_supported?CH_SAMPLE_OK:CH_SAMPLE_UNSUPPORTED;

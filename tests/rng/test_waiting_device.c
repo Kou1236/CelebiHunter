@@ -15,6 +15,7 @@ static uint32_t checks,entered,left,snapshot_reads,progress_reads,restore_calls,
 static uint32_t audio_fixture,output_gain,audio_stores,audio_busy,display_leaves,display_cancels;
 static uint32_t display_steps;
 static int backend_ok=1,env_status=RAW_ENV_OK,read_ok=1,progress_read_ok=1,post_read_ok=1,post_changed,restore_status=RAW_ENV_OK;
+static uint32_t result_trace_failure,result_trace_drift;
 static RawSample fixture_sample;
 static ChFinalPrompt fixture_prompt;
 static ChResultSnapshot fixture_result;
@@ -48,7 +49,9 @@ int raw_environment_backend_enter(RawEnvironmentBackend3ds *s,const ChNativeCont
     CHECK(!s->active);s->active=1;return 1;
 }
 void raw_environment_backend_leave(RawEnvironmentBackend3ds *s){CHECK(s->active);s->active=0;left++;}
-int fixture_result_read(const ChReadOps *o,ChResultSnapshot *s){(void)o;snapshot_reads++;
+int fixture_result_read(const ChReadOps *o,ChResultSnapshot *s){uint8_t byte;uint32_t i;snapshot_reads++;
+    if(result_trace_failure){(void)o->read_bytes(o->user,0x0badcafeu,&byte,1);return 0;}
+    if(result_trace_drift){for(i=0;i<6u;i++)CHECK(o->read_bytes(o->user,0x22f5fcu,&byte,1));return 0;}
     if(!read_ok||(device.environment.state.initial_applied&&!post_read_ok))return 0;
     *s=fixture_result;s->counter=fixture_sample.counter;
     if(device.environment.state.initial_applied&&post_changed)s->enemy[1]=1;

@@ -35,11 +35,18 @@ static int once_progress(const ChReadOps *o,ChResultProgress *s) {
        !o->read_bytes(o->user,s->wram+0x1437,s->script,9)||
        !o->read_bytes(o->user,0x22f766,b,2))return 0;
     s->applied_mask=(uint16_t)little(b,2);
-    if(!o->read_bytes(o->user,0x22f5fc,b,2))return 0;
+    if(!o->read_bytes(o->user,0x22f5fc,b,4))return 0;
     s->script_cpu_pc=little(b,2);
+    s->guest_sp=little(b+2,2);
     if(!o->read_bytes(o->user,s->io+0x9du,b,1)||
        !word(o,0x22f634,&s->script_fetch))return 0;
     s->script_cpu_bank=b[0];
+    /* The original stack lives in fixed WRAM0. Never scan discarded return
+       bytes, or translate an unchecked SP into a host address. Other live
+       positions remain observable but cannot certify generation. */
+    if(s->guest_sp>=0xc001u&&s->guest_sp<=0xc0f3u&&(s->guest_sp&1u)&&
+       !o->read_bytes(o->user,s->wram+s->guest_sp-0xc000u,
+                      s->generation_stack,CH_RESULT_STACK_BYTES))return 0;
     return 1;
 }
 int ch_result_read_progress(const ChReadOps *o,ChResultProgress *out) {
@@ -84,7 +91,7 @@ static int script_commit(const ChResultProgress *s,const ChResultProgress *origi
        original bank and fetch pointer independently proving that code. */
     if(s->script[0]!=1u||s->script[1]!=255u||s->script_cpu_bank!=37u||
        s->script_cpu_pc<0x4000u||s->script_cpu_pc>=0x8000u||
-       s->script_fetch!=s->rom+0x90000u+s->script_cpu_pc)return 0;
+       s->script_fetch!=s->rom+0x94000u)return 0;
     for(i=0;i<CH_SCRIPT_COMMIT_COUNT;i++) {
         const ChScriptCommit *c=&ch_script_commits[i];
         if(c->pc!=s->script_cpu_pc)continue;
@@ -123,11 +130,10 @@ int ch_result_begin(ChResultGate *g,const ChResultSource *source) {
     progress_from_snapshot(&p,s);
     for(i=0;i<32;i++)any|=source->source_identity[i];
     if(!any||s->abi!=CH_RESULT_ABI||!mapping_valid(&p)||!map_scene(&p)||!script_scene(&p,&p)||
-       s->battle_mode||s->battle_type||s->cur_level||s->temp_enemy||s->temp_wild||
+       s->battle_mode||s->battle_type||s->temp_wild||
        s->script[0]!=1u||s->script[1]!=255u||
        little(s->script+3,2)!=0x6e54u||(s->applied_mask&1u)==0)return reject(g,CH_RESULT_BAD_SOURCE);
     if(!path_valid(s))return reject(g,CH_RESULT_BAD_PATH);
-    for(i=0;i<CH_RESULT_ENEMY_BYTES;i++)if(s->enemy[i])return reject(g,CH_RESULT_BAD_SOURCE);
     g->binding=*source;g->last_counter=s->counter;return CH_RESULT_PENDING;
 }
 static int future(uint32_t a,uint32_t b) {uint32_t d=a-b;return d&&d<0x80000000u;}
@@ -137,10 +143,31 @@ static int press_valid(const ChResultGate *g,const ChResultFrameReceipt *r) {
         future(r->effective_press_counter,g->binding.source.counter)&&
         future(r->current_counter,r->effective_press_counter);
 }
-static int generation_ready(const ChResultProgress *s) {
+static int generation_checkpoint(const ChResultProgress *s) {
+    static const uint8_t returns[]={0x6b,0x04,0xff,0x31,0x9f,0x7b,0x1e,0x75,0xcd,0x74};
+    /* Original LoadEnemyMon clears the old enemy, writes both DVs and level,
+       then returns through InitEnemy to BattleIntro. Only afterwards does
+       InitBattleDisplay enter its first four-frame WaitBGMap. At DelayFrame's
+       HALT the CURRENT SP points to these exact five live return addresses:
+       DelayFrames, WaitBGMap, InitBattleDisplay, BattleIntro, StartBattle.
+       A stale Celebi30 can already match all enemy fields at battle entry;
+       it cannot have this active post-generation chain before LoadEnemyMon.
+       The complete snapshot independently pins all these original calls. */
+    return s->script_cpu_pc==0x460u&&s->guest_sp==0xc0c9u&&
+        s->script_cpu_bank==15u&&s->script_fetch==s->rom+0x3c000u&&
+        !memcmp(s->generation_stack,returns,sizeof(returns));
+}
+static int generation_fields_ready(const ChResultProgress *s) {
     return s->enemy[0]==251u&&s->enemy[13]==30u&&s->temp_enemy==251u&&s->temp_wild==251u&&
         s->cur_level==30u&&s->battle_mode==1u&&s->battle_type==11u&&little(s->script+3,2)==0x6e73u&&
         s->script[0]==1u&&s->script[1]==255u&&s->script[2]==27u&&s->script[5]==0u;
+}
+static uint32_t generated_dv(const ChResultProgress *s) {
+    return (uint32_t)s->enemy[6]<<8|s->enemy[7];
+}
+static int generation_ready(const ChResultGate *g,const ChResultProgress *s) {
+    return g->generation_observed&&generation_fields_ready(s)&&
+        generated_dv(s)==g->generated_dv;
 }
 int ch_result_observe_progress(ChResultGate *g,const ChResultProgress *s,
                                const ChResultFrameReceipt *r) {
@@ -181,9 +208,17 @@ int ch_result_observe_progress(ChResultGate *g,const ChResultProgress *s,
        real completed enemy remains observable while A is held, after a late
        release, or when no release receipt exists. Never read release fields
        here or set a manual hardware verification flag. */
-    /* Level is written only AFTER both original DV byte stores on Celebi's
-       pinned LoadEnemyMon path. Source zero rejects a stale prior enemy. */
-    if(!generation_ready(s))return CH_RESULT_PENDING;
+    /* Residual enemy bytes and item-selected level at the origin are normal.
+       The live post-generation return chain, not their old contents or a DV
+       difference, proves that both original stores and level completed. */
+    if(!g->generation_observed&&generation_fields_ready(s)&&generation_checkpoint(s)) {
+        g->generation_observed=1;g->generation_counter=s->counter;
+        g->generated_dv=generated_dv(s);
+    }
+    /* Later owned frames retain the derived generation witness. Publishing
+       still requires these same generated DV bytes, a coherent same-boundary
+       full snapshot and a new original-ROM path read. */
+    if(!generation_ready(g,s))return CH_RESULT_PENDING;
     g->ready=1;g->ready_state=*s;return CH_RESULT_READY;
 }
 int ch_result_complete(ChResultGate *g,const ChResultSnapshot *s,ChResultObservation *out) {
@@ -197,7 +232,7 @@ int ch_result_complete(ChResultGate *g,const ChResultSnapshot *s,ChResultObserva
     if(!path_valid(s))return reject(g,CH_RESULT_BAD_PATH);
     if(s->counter!=g->last_counter||memcmp(&p,&g->ready_state,sizeof(p)))
         return reject(g,CH_RESULT_BAD_UNIT);
-    if(!map_scene(&p)||!script_scene(&p,&origin)||!generation_ready(&p))
+    if(!map_scene(&p)||!script_scene(&p,&origin)||!generation_ready(g,&p))
         return reject(g,CH_RESULT_BAD_SCENE);
     out->abi=CH_RESULT_ABI;out->counter=s->counter;out->species=251;out->level=30;
     out->dv=(uint32_t)s->enemy[6]<<8|s->enemy[7];out->complete=1;

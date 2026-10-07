@@ -6,6 +6,7 @@ static int ordinary(const RawSample *s) {
         s->host_phase==0u&&s->input_type==1u&&s->input_enable==0u;
 }
 static void invalidate_source(RawRuntime *r) {
+    if(r->source_bound)r->refresh_needed=1;
     r->source_bound=0;r->waiting_valid=0;r->plan_active=0;r->plan_pending=0;
     ch_controller_request_query(&r->controls);
 }
@@ -20,8 +21,8 @@ static MpSourceConditions plan_sample(const RawRuntime *r,const RawSample *s) {
 static void plan_failed(RawRuntime *r) {
     r->plan_active=0;r->plan_pending=0;r->plan_failed=1;r->input_condition_matches=0;
     if(r->input_plan.error==MP_UNSUPPORTED_SOURCE||r->input_plan.error==MP_STALE_SOURCE||
-       r->input_plan.error==MP_COUNTER_MISMATCH)r->source_bound=0;
-    ch_controller_request_query(&r->controls);
+       r->input_plan.error==MP_COUNTER_MISMATCH)invalidate_source(r);
+    else ch_controller_request_query(&r->controls);
 }
 static int create_plan(RawRuntime *r,const RawSample *s,const ManualPrediction *p) {
     MpSourceConditions a=plan_sample(r,s);MpConditionalTarget t;
@@ -160,6 +161,9 @@ void raw_runtime_poll_player(RawRuntime *r,uint32_t keys,const RawSample *s) {
         r->source.source_epoch==r->scene_epoch&&!r->encounter_started&&!r->fault&&
         !r->original_raw_a_seen);
     ch_controller_update(&r->controls,&i,&r->view);
+    /* Controller-only failures also withdraw the bound source and expose the
+       actual pause/counter reason. Never clear that fault to retry a query. */
+    if(r->controls.fault&&!r->fault)fault(r,RAW_FAULT_ORDER);
     /* A is the player's request to resume original gameplay with real HID.
        Only an explicit L release requests a single unit. Do not rewrite A's
        RESUME command into a step or supply/clear any guest input. */
@@ -185,6 +189,12 @@ void raw_runtime_after_scan(RawRuntime *r,const RawSample *s) {
     if((s->host_held&1u)&&!(r->scan_before_held&1u)&&!r->encounter_started) {
         r->actual_raw_press_seen=1;r->actual_raw_press=s->counter;
         r->actual_raw_release_seen=0;
+        /* Record the original press before a distant plan cancellation changes
+           candidate.status. It must never relabel a later environment fault. */
+        r->encounter_forecast_reason=RAW_ENCOUNTER_FORECAST_UNAVAILABLE;
+        if(r->candidate.abi==MANUAL_PREDICTION_ABI&&r->candidate.status==MANUAL_QUERY_OK&&
+           r->candidate.source_epoch==s->scene_epoch&&s->counter!=r->raw_target)
+            r->encounter_forecast_reason=RAW_ENCOUNTER_FORECAST_OFF_TARGET;
     } else if(!(s->host_held&1u)&&(r->scan_before_held&1u)&&r->actual_raw_press_seen&&
               !r->actual_raw_release_seen) {
         r->actual_raw_release_seen=1;r->actual_raw_release=s->counter;
@@ -235,6 +245,14 @@ void raw_runtime_engine_entry(RawRuntime *r,const RawSample *s) {
             r->candidate.abi==MANUAL_PREDICTION_ABI&&r->candidate.status==MANUAL_QUERY_OK&&
             r->candidate.source_epoch==s->scene_epoch&&r->effective_target==s->counter)
             r->encounter_candidate=r->candidate;
+        if(r->encounter_candidate.status==MANUAL_QUERY_OK)
+            r->encounter_forecast_reason=RAW_ENCOUNTER_FORECAST_NONE;
+        else {
+            if(r->encounter_forecast_reason!=RAW_ENCOUNTER_FORECAST_OFF_TARGET)
+                r->encounter_forecast_reason=RAW_ENCOUNTER_FORECAST_UNAVAILABLE;
+            r->plan_active=0;r->plan_pending=0;r->plan_failed=1;
+            r->input_condition_matches=0;
+        }
         r->source_bound=0;
     } else if(!held&&r->guest_a_previous&&r->encounter_started&&!r->release_seen) {
         r->effective_release=s->counter;r->release_seen=1;
@@ -248,7 +266,9 @@ void raw_runtime_engine_entry(RawRuntime *r,const RawSample *s) {
 }
 int raw_runtime_bind_source(RawRuntime *r,const ManualSourceBinding *s,uint64_t generation) {
     if(!r||!s||s->abi!=MANUAL_PREDICTION_ABI||!s->source_epoch||!generation||
-        s->rng_add>255||s->rng_sub>255||r->encounter_started||r->fault||
+        s->rng_add>255||s->rng_sub>255||r->encounter_started||r->fault||r->controls.fault||
+        !r->observed.script_final_prompt||
+        (r->source_generation&&(r->original_raw_a_seen||r->actual_raw_press_seen))||
         !ordinary(&r->observed)||((r->observed.host_held|r->observed.host_intersection)&1u)||
         (r->observed.guest_mask&255u)!=255u||r->observed.guest_mask==255u||
         s->source_epoch!=r->observed.scene_epoch||s->origin_counter!=r->observed.counter||
@@ -261,6 +281,7 @@ int raw_runtime_bind_source(RawRuntime *r,const ManualSourceBinding *s,uint64_t 
     r->original_raw_a_seen=0;r->query_status=MANUAL_QUERY_OK;r->refresh_needed=0;
     r->actual_raw_press_seen=0;r->actual_raw_release_seen=0;
     r->actual_raw_press=0;r->actual_raw_release=0;
+    r->encounter_forecast_reason=RAW_ENCOUNTER_FORECAST_NONE;
     r->actual_press_mask=0;r->actual_release_mask=0;
     r->guest_a_initialized=1;r->guest_a_previous=0;
     memset(&r->candidate,0,sizeof(r->candidate));ch_controller_request_query(&r->controls);return 1;

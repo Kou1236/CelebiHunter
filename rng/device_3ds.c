@@ -11,9 +11,9 @@
 #include "audio/paused_audio_3ds.h"
 #include "source-observer/aligned_waiting.h"
 extern void ch_manual_alias_probe(void);
-enum { WAIT_DIAG_ALIGNMENT=1,WAIT_DIAG_BINDING=2,WAIT_DIAG_COUNTER=3,
-       WAIT_DIAG_PROJECTION=4,WAIT_DIAG_STATE=5,WAIT_DIAG_INFER=6,
-       WAIT_DIAG_OPERANDS=7,WAIT_DIAG_RESEED=8 };
+#define RAW_SOURCE_READONLY_RETRIES 4u
+#define RAW_SOURCE_RETRY_ADVANCES 16u
+#define RAW_WAIT_UNAVAILABLE_ADVANCES 4u
 typedef struct {
     uint32_t failures,first_failure_counter,stage,counter,previous_counter,target;
     uint32_t applied_mask,previous_vblank,actual_vblank,first_valid;
@@ -61,16 +61,351 @@ typedef struct {
 } Device;
 static Device device;
 static RawQueryCache worker_query_cache;
+typedef struct {const ChReadOps *source;uint32_t calls,failed,ordinal,address,size;} RawResultReadTrace;
+static int traced_result_read(void *user,uint32_t address,void *out,uint32_t size){
+    RawResultReadTrace *t=user;t->calls++;
+    if(!t->source->read_bytes(t->source->user,address,out,size)){
+        if(!t->failed){t->failed=1u;t->ordinal=t->calls;t->address=address;t->size=size;}
+        return 0;
+    }
+    return 1;
+}
+static int result_snapshot_traced(Device *d,ChResultSnapshot *out){
+    RawResultReadTrace t;ChReadOps read=d->binding.read;int good;
+    memset(&t,0,sizeof(t));t.source=&d->binding.read;read.user=&t;read.read_bytes=traced_result_read;
+    good=ch_result_read_snapshot(&read,out);
+    d->source_diagnostic.result_read_kind=good?RAW_RESULT_READ_OK:
+        t.failed?RAW_RESULT_READ_FAILED:t.calls<=5u?RAW_RESULT_READ_LAYOUT_REJECTED:RAW_RESULT_READS_DISAGREED;
+    d->source_diagnostic.result_read_calls=t.calls;
+    d->source_diagnostic.result_read_ordinal=t.ordinal?t.ordinal:t.calls;
+    d->source_diagnostic.result_read_address=t.address;d->source_diagnostic.result_read_size=t.size;
+    return good;
+}
+static char *diag_copy(char *p,const char *s){while(*s)*p++=*s++;*p=0;return p;}
+static char *diag_number(char *p,uint32_t v){char b[10];uint32_t n=0;
+    do{b[n++]=(char)('0'+v%10u);}while(v/=10u);while(n)*p++=b[--n];*p=0;return p;}
+static char *diag_hex(char *p,uint32_t v){const char *h="0123456789ABCDEF";uint32_t i;
+    for(i=0;i<8;i++)*p++=h[(v>>(28u-4u*i))&15u];
+    *p=0;return p;}
+static char *diag_hex16(char *p,uint32_t v){const char *h="0123456789ABCDEF";uint32_t i;
+    for(i=0;i<4;i++)*p++=h[(v>>(12u-4u*i))&15u];
+    *p=0;return p;}
+static char *diag_copy_bound(char *p,char *end,const char *s){
+    while(*s&&p<end)*p++=*s++;
+    *p=0;return p;
+}
+static void diag_rows(RawHud *h,uint32_t color,const char *text){
+    uint32_t n,k,row;
+    while(*text&&h->count<12u){
+        for(n=0;n<50u&&text[n];n++){}
+        if(n==50u&&text[n]){
+            for(k=n;k>0u&&text[k]!=' ';k--){}
+            if(k)n=k;
+        }
+        row=h->count++;h->color[row]=color;
+        memcpy(h->line[row],text,n);h->line[row][n]=0;
+        text+=n;while(*text==' ')text++;
+    }
+}
+static void add_diag(RawHud *h,uint32_t color,const char *code,const char *message){
+    char text[160],*p=text,*end=text+sizeof(text)-1u;if(!h||h->count>=12u)return;
+    p=diag_copy_bound(p,end,"Check ");p=diag_copy_bound(p,end,code);
+    p=diag_copy_bound(p,end,": ");(void)diag_copy_bound(p,end,message);
+    diag_rows(h,color,text);
+}
+static void add_diag_detail(RawHud *h,uint32_t color,const char *code,const char *message,const char *detail){
+    if(!h||h->count>=12u)return;
+    add_diag(h,color,code,message);
+    /* Detail values need their own 50-column row to remain visible. */
+    if(!detail||!*detail||h->count>=12u)return;
+    diag_rows(h,color,detail);
+}
+static const char *scene_rejection_text(uint32_t reason){
+    switch(reason){
+    case CH_SCENE_POINTER_READ:return "ROM/WRAM base pointer unreadable";
+    case CH_SCENE_POINTER_INVALID:return "ROM/WRAM base pointer has invalid value";
+    case CH_SCENE_POINTER_LAYOUT:return "ROM/WRAM pointer layout unsupported";
+    case CH_SCENE_ROM_READ:return "Crystal instruction bytes unreadable";
+    case CH_SCENE_ROM_SIGNATURE:return "Crystal instruction signature differs";
+    case CH_SCENE_BANK_READ:return "game bank register unreadable";
+    case CH_SCENE_BANK_UNSUPPORTED:return "game bank state unsupported";
+    case CH_SCENE_STATE_READ:return "script/map/joypad memory unreadable";
+    case CH_SCENE_SCRIPT_STATE:return "not at the supported Shrine script step";
+    case CH_SCENE_STACK_READ:return "game stack unreadable";
+    case CH_SCENE_STACK_PATH:return "expected prompt call path not found";
+    case CH_SCENE_INPUT_HELD:return "release game buttons";
+    default:return "supported final GS Ball prompt not recognized";
+    }
+}
+static const char *env_rejection_text(uint32_t reason){
+    switch(reason){
+    case RAW_ENV_SOURCE_CAPTURE:return "stable source memory capture failed";
+    case RAW_ENV_SOURCE_LAYOUT:return "live memory layout unsupported";
+    case RAW_ENV_SOURCE_STATE:return "environment state did not match";
+    case RAW_ENV_SOURCE_RTC:return "RTC instruction/state mismatch";
+    case RAW_ENV_SOURCE_CPU:return "CPU context outside model";
+    case RAW_ENV_SOURCE_SAVE_TIME:return "Save time cannot match model clock";
+    default:return "environment preflight rejected the source";
+    }
+}
+static const char *result_reason_text(uint32_t reason){
+    switch(reason){
+    case CH_RESULT_BAD_SOURCE:return "result source changed";
+    case CH_RESULT_BAD_PATH:return "encounter instruction path mismatch";
+    case CH_RESULT_BAD_IDENTITY:return "result identity mismatch";
+    case CH_RESULT_BAD_UNIT:return "unexpected scheduler unit";
+    case CH_RESULT_BAD_SCENE:return "scene changed before result read";
+    case CH_RESULT_BAD_INPUT:return "input receipt mismatch";
+    case CH_RESULT_BAD_MAPPING:return "result memory mapping unsupported";
+    default:return "result snapshot not ready";
+    }
+}
+static uint32_t unit_reason(const RawDeviceSourceDiagnostic *s){
+    if(s->sample_status==(uint32_t)CH_SAMPLE_READ_FAILED)return 1u;
+    if(s->sample_status==(uint32_t)CH_SAMPLE_INCOHERENT)return 2u;
+    if(!s->counter_valid)return 4u;
+    if(s->batch_count!=1u)return 5u;
+    if(s->host_phase!=0u)return 6u;
+    if(s->engine_type!=1u)return 7u;
+    if(s->input_enable!=0u)return 8u;
+    if(s->sample_status==(uint32_t)CH_SAMPLE_UNSUPPORTED)return 3u;
+    return s->ordinary_supported?9u:10u;
+}
+static void add_source_diag(Device *d,const RawRuntime *r,RawHud *h){
+    const RawDeviceSourceDiagnostic *s=&d->source_diagnostic;const RawWaitingDiagnostic *w=&d->waiting_diagnostic;
+    const char *message=0;char code[32]={0};char *p=code;uint32_t color=0xffdd70u;
+    if(!r||!h||h->count>=12u)return;
+    if(r->source_bound&&!r->controls.candidate_valid&&!r->waiting_valid&&w->failures){
+        if(s->waiting_unavailable_failures<RAW_WAIT_UNAVAILABLE_ADVANCES&&
+           r->counter-s->waiting_unavailable_since<RAW_WAIT_UNAVAILABLE_ADVANCES){
+            add_diag(h,color,"W00","rechecking live state; Target unavailable");return;
+        }
+        color=0xff9090u;
+        if(w->stage==RAW_WAIT_DIAG_ALIGNMENT){
+            if(w->aligned.stage==SOURCE_ALIGNED_READ){
+                p=diag_copy(p,"M");p=diag_number(p,w->aligned.read_ordinal);
+                p=diag_copy(p,"/P");p=diag_number(p,w->aligned.read_pass);
+                *p++='@';p=diag_hex(p,w->aligned.read_address);*p=0;
+                add_diag(h,color,code,"state read failed at recorded address");return;
+            }
+            if(w->aligned.stage==SOURCE_ALIGNED_DRIFT){
+                add_diag(h,color,"W01/D","state changed during the double read");return;
+            }
+            else if(w->aligned.stage==SOURCE_ALIGNED_DOMAIN){
+                p=diag_copy(p,"T");if(w->aligned.domain_guard<10u)*p++='0';p=diag_number(p,w->aligned.domain_guard);*p=0;
+                switch(w->aligned.domain_guard){
+                case 1:message="emulator pointer pair mismatch";break;
+                case 2:message="game CPU position/register state mismatch";break;
+                case 3:message="TIMA modulo mismatch";break;
+                case 4:message="TAC timer mode mismatch";break;
+                case 5:message="timer interrupt state mismatch";break;
+                case 6:message="HBlank flags outside model";break;
+                case 7:message="LCD countdown outside model";break;
+                case 8:message="LCD timing periods outside model";break;
+                case 9:message="LCD mode outside model";break;
+                case 10:message="LY/STAT register mismatch";break;
+                case 11:message="DIV enable state mismatch";break;
+                case 12:message="background phase outside model";break;
+                case 13:message="TIMA phase outside model";break;
+                case 14:message="TIMA countdown outside model";break;
+                case 15:message="timer deadline mismatch";break;
+                case 16:message="scheduler budget mismatch";break;
+                default:message="unrecognized timing guard";break;
+                }
+                add_diag(h,color,code,message);return;
+            }else message="CPU/scheduler boundary outside the model";
+            add_diag(h,color,"W01/B",message);return;
+        }
+        switch(w->stage){
+        case RAW_WAIT_DIAG_BINDING:message="live RNG/background no longer matches source";break;
+        case RAW_WAIT_DIAG_COUNTER:message="scheduler advanced before state validation";break;
+        case RAW_WAIT_DIAG_PROJECTION:message="timer projection could not advance";break;
+        case RAW_WAIT_DIAG_STATE:message="live DIV/RNG differs from projected state";break;
+        case RAW_WAIT_DIAG_INFER:message="observed RNG instruction pair did not match";break;
+        case RAW_WAIT_DIAG_OPERANDS:message="observed DIV operands did not match timer model";break;
+        case RAW_WAIT_DIAG_RESEED:message="could not capture a fresh source state";break;
+        default:message="waiting state check failed";break;
+        }
+        p=diag_copy(p,"W");if(w->stage<10u)*p++='0';p=diag_number(p,w->stage);*p=0;
+        add_diag(h,color,code,message);return;
+    }
+    if(s->closed&&s->phase!=RAW_SOURCE_ADMITTED){color=0xff9090u;
+        switch(s->phase){
+        case RAW_SOURCE_STOP_OWNERSHIP:message="plugin lost native-thread ownership";break;
+        case RAW_SOURCE_STOP_PATH:message="encounter result code path mismatch";break;
+        case RAW_SOURCE_STOP_STORE:message="environment store/readback failed";break;
+        case RAW_SOURCE_STOP_POISON:message="environment is poisoned; restart game";break;
+        case RAW_SOURCE_STOP_APPLIED:message="environment attempt already used";break;
+        case RAW_SOURCE_STOP_VERIFY:message="captured source failed readback check";break;
+        default:message="source acquisition stopped";break;
+        }
+        p=diag_copy(p,"S");if(s->phase<10u)*p++='0';p=diag_number(p,s->phase);
+        if(s->phase==RAW_SOURCE_STOP_PATH){
+            *p++='/';*p++='R';if(s->result_reason<10u)*p++='0';p=diag_number(p,s->result_reason);
+        }else if(s->phase==RAW_SOURCE_STOP_VERIFY&&s->waiting_stage==RAW_WAIT_DIAG_ALIGNMENT&&
+                 s->waiting_alignment.stage!=SOURCE_ALIGNED_OK){
+            const SourceAlignedDiagnostic *a=&s->waiting_alignment;
+            if(a->stage==SOURCE_ALIGNED_DOMAIN){
+                p=diag_copy(p,"/T");if(a->domain_guard<10u)*p++='0';p=diag_number(p,a->domain_guard);
+                message="initial timing guard rejected source";
+            }else if(a->stage==SOURCE_ALIGNED_READ){
+                p=diag_copy(p,"/M");p=diag_number(p,a->read_ordinal);
+                p=diag_copy(p,"/P");p=diag_number(p,a->read_pass);*p++='@';p=diag_hex(p,a->read_address);
+                message="initial state read failed";
+            }else if(a->stage==SOURCE_ALIGNED_DRIFT){
+                p=diag_copy(p,"/W01/D");message="initial paired state reads differed";
+            }else{p=diag_copy(p,"/W01/B");message="initial scheduler boundary outside model";}
+        }else if(s->phase==RAW_SOURCE_STOP_VERIFY&&s->waiting_stage==RAW_WAIT_DIAG_BINDING){
+            p=diag_copy(p,"/W02");message="initial counter/RNG/source did not match";
+        }else if(s->phase==RAW_SOURCE_STOP_VERIFY&&s->result_read_kind==RAW_RESULT_READ_FAILED){
+            *p++='/';*p++='M';p=diag_number(p,s->result_read_ordinal);*p++='@';p=diag_hex(p,s->result_read_address);
+        }else if(s->phase==RAW_SOURCE_STOP_VERIFY&&s->result_read_kind==RAW_RESULT_READ_LAYOUT_REJECTED){
+            p=diag_copy(p,"/L");
+        }else if(s->phase==RAW_SOURCE_STOP_VERIFY&&s->result_read_kind==RAW_RESULT_READS_DISAGREED){
+            p=diag_copy(p,"/D");
+        }else if(s->phase==RAW_SOURCE_STOP_VERIFY&&s->result_reason){
+            *p++='/';*p++='R';if(s->result_reason<10u)*p++='0';p=diag_number(p,s->result_reason);
+        }else if(s->phase==RAW_SOURCE_STOP_VERIFY&&s->environment_rejection){
+            *p++='/';*p++='E';if(s->environment_rejection<10u)*p++='0';p=diag_number(p,s->environment_rejection);
+            if(s->environment_rejection==RAW_ENV_SOURCE_SAVE_TIME)
+                message=env_rejection_text(s->environment_rejection);
+        }else if(s->phase==RAW_SOURCE_STOP_VERIFY){
+            p=diag_copy(p,"/V");
+        }else if(s->phase==RAW_SOURCE_STOP_STORE||s->phase==RAW_SOURCE_STOP_POISON){
+            *p++='/';*p++='E';if(s->environment_status<10u)*p++='0';p=diag_number(p,s->environment_status);
+        }
+        *p=0;
+        add_diag(h,color,code,message);return;
+    }
+    if(raw_runtime_source_recovery_pending(r)){
+        add_diag(h,color,"S18","source expired; waiting for released revalidation");return;
+    }
+    if(s->refresh_readonly_retries&&r->refresh_needed){
+        add_diag(h,color,"S18","rechecking source read; Target unavailable");return;
+    }
+    if(!d->source_requested||d->source_available)return;
+    switch(s->phase){
+    case RAW_SOURCE_WAIT_PROMPT:
+        p=diag_copy(p,"G");if(s->scene_rejection<10u)*p++='0';p=diag_number(p,s->scene_rejection);
+        if(s->scene_rejection_detail){
+            *p++='/';
+            *p++=(s->scene_rejection==CH_SCENE_POINTER_READ||
+                s->scene_rejection==CH_SCENE_POINTER_INVALID)?'P':
+                s->scene_rejection==CH_SCENE_POINTER_LAYOUT?'L':
+                s->scene_rejection==CH_SCENE_BANK_UNSUPPORTED?'B':
+                (s->scene_rejection==CH_SCENE_ROM_READ||s->scene_rejection==CH_SCENE_STATE_READ)?'R':
+                s->scene_rejection==CH_SCENE_INPUT_HELD?'I':'C';
+            if(s->scene_rejection==CH_SCENE_BANK_UNSUPPORTED)p=diag_hex16(p,s->scene_rejection_detail);
+            else{if(s->scene_rejection_detail<10u)*p++='0';p=diag_number(p,s->scene_rejection_detail);}
+            *p=0;
+        }
+        add_diag(h,color,code,scene_rejection_text(s->scene_rejection));return;
+    case RAW_SOURCE_WAIT_UNIT:
+        p=diag_copy(p,"S01/U");if(unit_reason(s)<10u)*p++='0';p=diag_number(p,unit_reason(s));*p=0;
+        switch(unit_reason(s)){
+        case 1:message="scheduler sample could not be read";break;
+        case 2:message="scheduler fields changed during paired read";break;
+        case 3:message="scheduler unit is outside supported mode";break;
+        case 4:message="scheduler counter is unavailable";break;
+        case 5:message="scheduler batch is not one";break;
+        case 6:message="host input phase is not zero";break;
+        case 7:message="game input engine type is unsupported";break;
+        case 8:message="game input is not enabled for the modeled path";break;
+        case 9:message="scheduler sample is incomplete";break;
+        default:message="engine/task state unsupported";break;
+        }
+        {char detail[40];char *q=detail;q=diag_copy(q,"t=");q=diag_hex16(q,s->engine_type);
+         q=diag_copy(q," b=");q=diag_hex16(q,s->batch_count);q=diag_copy(q," p=");
+         q=diag_hex16(q,s->host_phase);q=diag_copy(q," en=");q=diag_hex16(q,s->input_enable);
+         add_diag_detail(h,color,code,message,detail);return;}
+    case RAW_SOURCE_WAIT_INPUT:
+        p=diag_copy(p,"S02/I");*p++='0';
+        p=diag_number(p,((s->host_held|s->host_intersection)&1u)?1u:2u);*p=0;
+        message=((s->host_held|s->host_intersection)&1u)?
+            "release A and wait for a neutral scan":"game has not released all buttons";
+        {char detail[48];char *q=detail;q=diag_copy(q,"held=");q=diag_hex16(q,s->host_held);
+         q=diag_copy(q," intersection=");q=diag_hex16(q,s->host_intersection);
+         q=diag_copy(q," guest=");q=diag_hex16(q,s->guest_mask);
+         add_diag_detail(h,color,code,message,detail);return;}
+    case RAW_SOURCE_WAIT_CPU:
+        {char detail[32];char *q=detail;q=diag_copy(q,"pc=");q=diag_hex16(q,s->guest_pc);
+         q=diag_copy(q," sp=");q=diag_hex16(q,s->guest_sp);
+         add_diag_detail(h,color,"S03","CPU outside 0460/C0D5 stop",detail);return;}
+    case RAW_SOURCE_WAIT_READ:
+        if(s->result_read_kind==RAW_RESULT_READ_FAILED){
+            p=diag_copy(p,"S04/M");p=diag_number(p,s->result_read_ordinal);*p++='@';
+            p=diag_hex(p,s->result_read_address);*p=0;
+            add_diag(h,color,code,"result read failed at this address");return;
+        }
+        if(s->result_read_kind==RAW_RESULT_READ_LAYOUT_REJECTED){add_diag(h,color,"S04/L","result pointers/layout rejected");return;}
+        if(s->result_read_kind==RAW_RESULT_READS_DISAGREED){
+            {char detail[22];char *q=detail;q=diag_copy(q,"reads=");q=diag_number(q,s->result_read_calls);
+             add_diag_detail(h,color,"S04/D","paired result reads differed",detail);return;}
+        }
+        add_diag(h,color,"S04/U","result snapshot unavailable");return;
+    case RAW_SOURCE_WAIT_ENEMY:
+        {char detail[42];char *q=detail;q=diag_copy(q,"nonzero=");q=diag_number(q,s->result_enemy_nonzero);
+         q=diag_copy(q," first[");q=diag_number(q,s->result_enemy_first_index);q=diag_copy(q,"]=");
+         q=diag_hex16(q,s->result_enemy_first_value);
+         add_diag_detail(h,color,"S05","encounter buffer is not empty",detail);return;}
+    case RAW_SOURCE_WAIT_RESULT:
+        p=diag_copy(p,"S06/R");if(s->result_reason<10u)*p++='0';p=diag_number(p,s->result_reason);*p=0;
+        message=result_reason_text(s->result_reason);break;
+    case RAW_SOURCE_WAIT_PREFLIGHT:
+        p=diag_copy(p,"S07/E");if(s->environment_rejection<10u)*p++='0';p=diag_number(p,s->environment_rejection);*p=0;
+        message=env_rejection_text(s->environment_rejection);break;
+    case RAW_SOURCE_WAIT_CPU_CONTEXT:
+        p=diag_copy(p,"S15/E");if(s->environment_rejection<10u)*p++='0';p=diag_number(p,s->environment_rejection);*p=0;
+        message="CPU context outside supported model";break;
+    case RAW_SOURCE_WAIT_CPU_READ:
+        p=diag_copy(p,"S16/E");if(s->environment_rejection<10u)*p++='0';p=diag_number(p,s->environment_rejection);*p=0;
+        message="CPU context read failed";break;
+    case RAW_SOURCE_PREPARED:message="environment prepared; waiting for a fresh scheduler state";break;
+    default:return;
+    }
+    if(!*code){p=diag_copy(p,"S");if(s->phase<10u)*p++='0';p=diag_number(p,s->phase);*p=0;}
+    add_diag(h,color,code,message);
+}
 static int sample(void *u,RawSample *s){Device *d=u;int scope=ch_3ds_read_begin(&d->backend);
     d->binding.omit_arrival_check=ch_raw_service.runtime.encounter_started;
     int good=raw_platform_sample(&d->binding,s);
     if(scope)ch_3ds_read_end(&d->backend);
-    RawDeviceSourceDiagnostic *a=&d->source_diagnostic;
+    RawDeviceSourceDiagnostic *a=&d->source_diagnostic;uint32_t j;
     LightLock_Lock(&d->source_lock);
     a->counter=s->counter;a->guest_pc=d->binding.last_prompt.guest_pc;
     a->guest_sp=d->binding.last_prompt.guest_sp;a->guest_mask=s->guest_mask;
     a->sample_status=(uint32_t)d->binding.last_sample_status;
     a->scene_status=(uint32_t)d->binding.last_scene_status;
+    a->scene_rejection=d->binding.last_prompt.rejection;
+    a->scene_rejection_detail=d->binding.last_prompt.rejection_detail;
+    a->counter_valid=s->counter_read;a->ordinary_supported=s->ordinary_supported;
+    a->engine_type=s->input_type;a->batch_count=s->batch;a->host_phase=s->host_phase;
+    a->input_enable=s->input_enable;a->host_held=s->host_held;a->host_down=s->host_down;
+    a->host_up=s->host_up;a->host_intersection=s->host_intersection;
+    a->scene_script_mode=d->binding.last_prompt.script_mode;
+    a->scene_script_running=d->binding.last_prompt.script_running;
+    a->scene_script_bank=d->binding.last_prompt.script_bank;
+    a->scene_script_next=d->binding.last_prompt.script_next;
+    a->scene_map_group=d->binding.last_prompt.map_group;
+    a->scene_map_number=d->binding.last_prompt.map_number;
+    a->engine_pointer=d->binding.last_boundary.engine_pointer;
+    a->recording_gate=d->binding.last_boundary.recording_gate;
+    a->queued_tasks=d->binding.last_boundary.queued_tasks;
+    a->engine_mode=d->binding.last_boundary.engine_mode;
+    a->engine_flags=d->binding.last_boundary.engine_flags;
+    a->selected_config_pointer=d->binding.last_boundary.selected_config_pointer;
+    a->selected_config_mode=d->binding.last_boundary.selected_config_mode;
+    a->previous_provider_keys=d->binding.last_boundary.previous_provider_keys;
+    a->scene_rom_pointer=d->binding.last_prompt.rom_pointer;
+    a->scene_wram0_pointer=d->binding.last_prompt.wram0_pointer;
+    a->scene_wram1_pointer=d->binding.last_prompt.wram1_pointer;
+    a->scene_hram_pointer=d->binding.last_prompt.hram_pointer;
+    a->scene_io_pointer=d->binding.last_prompt.io_pointer;
+    a->scene_rom_bank=d->binding.last_prompt.rom_bank;
+    a->scene_stack_wait_seen=d->binding.last_prompt.stack_wait_seen;
+    a->scene_stack_joy_seen=d->binding.last_prompt.stack_joy_seen;
+    a->scene_joyp=d->binding.last_prompt.joyp;
+    for(j=0;j<8u;j++)a->scene_joy_mirrors[j]=d->binding.last_prompt.joy_mirrors[j];
     if(!a->closed&&!a->attempts) {
         a->phase=!s->script_final_prompt?RAW_SOURCE_WAIT_PROMPT:
             !s->ordinary_supported?RAW_SOURCE_WAIT_UNIT:
@@ -86,6 +421,17 @@ static int keys(void *u,uint32_t *k){Device *d=u;return raw_platform_keys(&d->bi
 static void diagnose_hud(Device *d,const RawRuntime *r,RawHud *h){
     if(h->count&&d->pause_audio.initialized&&d->pause_audio_status!=1&&
        (r->runtime==CH_RUNTIME_PAUSED||d->pause_audio.owned))h->color[0]=0xffdd70u;
+    LightLock_Lock(&d->source_lock);
+    d->source_diagnostic.runtime_fault=r->fault;d->source_diagnostic.query_status=r->query_status;
+    d->source_diagnostic.query_detail=r->query_failure_detail;
+    d->source_diagnostic.source_bound=r->source_bound;
+    d->source_diagnostic.candidate_valid=r->controls.candidate_valid;
+    d->source_diagnostic.waiting_valid=r->waiting_valid;
+    d->source_diagnostic.current_advance=r->counter;
+    d->source_diagnostic.target_advance=r->raw_target;
+    d->source_diagnostic.input_plan_error=r->input_plan.error;
+    add_source_diag(d,r,h);
+    LightLock_Unlock(&d->source_lock);
 }
 static void hud(void *u,const RawHud *h){Device *d=u;RawHud diagnosed=*h;int changed;
     diagnose_hud(d,&ch_raw_service.runtime,&diagnosed);
@@ -125,9 +471,35 @@ static uint32_t tls(void){uint32_t v;__asm__ volatile("mrc p15,0,%0,c13,c0,3":"=
 static int stop_source(Device *d,uint32_t phase){
     d->source_requested=0;d->source_diagnostic.closed=1;d->source_diagnostic.phase=phase;return -1;
 }
+/* These retries occur only before a new environment write. Every failed
+   attempt consumes the finite budget and waits for actual original advances. */
+static int retry_initial_readonly(Device *d,uint32_t counter){
+    RawDeviceSourceDiagnostic *a=&d->source_diagnostic;
+    a->initial_retry_counter=counter;
+    if(++a->initial_readonly_retries>=RAW_SOURCE_READONLY_RETRIES)
+        return stop_source(d,RAW_SOURCE_STOP_VERIFY);
+    return 0;
+}
+static int retry_refresh_readonly(Device *d,uint32_t counter){
+    RawDeviceSourceDiagnostic *a=&d->source_diagnostic;
+    RawRuntime *r=&ch_raw_service.runtime;
+    /* The old search window stays withdrawn throughout the backoff. A stale
+       worker job must not clear the pending checked-source refresh. */
+    r->source_bound=0;r->waiting_valid=0;d->waiting_observation_valid=0;
+    ch_controller_request_query(&r->controls);memset(&r->view.query,0,sizeof(r->view.query));
+    a->refresh_retry_counter=counter;
+    if(++a->refresh_readonly_retries>=RAW_SOURCE_READONLY_RETRIES)return -1;
+    return 0;
+}
 /* The original engine caller owns these reads. Future timing remains a
    read-only projection; neither successful observation nor a mismatch supplies
    an input, pauses the game, or alters a timer. */
+static void save_waiting_alignment(Device *d){
+    RawDeviceSourceDiagnostic *s=&d->source_diagnostic;const SourceAlignedDiagnostic *a=&d->waiting_read_diagnostic;
+    s->waiting_guard=a->domain_guard;s->waiting_alignment_stage=a->stage;
+    s->waiting_read_ordinal=a->read_ordinal;s->waiting_read_address=a->read_address;
+    s->waiting_read_size=a->read_size;s->waiting_read_pass=a->read_pass;s->waiting_alignment=*a;
+}
 static void waiting_discard(Device *d,uint32_t stage,const CQWaitingState *expected,
     const CQWaitingState *actual,const SourceObservation *observed){
     RawRuntime *r=&ch_raw_service.runtime;RawWaitingDiagnostic *a=&d->waiting_diagnostic;
@@ -139,6 +511,17 @@ static void waiting_discard(Device *d,uint32_t stage,const CQWaitingState *expec
     if(expected)a->expected=*expected;else memset(&a->expected,0,sizeof(a->expected));
     if(actual)a->actual=*actual;else memset(&a->actual,0,sizeof(a->actual));
     a->aligned=d->waiting_read_diagnostic;
+    d->source_diagnostic.waiting_stage=stage;
+    save_waiting_alignment(d);
+    d->source_diagnostic.waiting_failures=a->failures;
+    d->source_diagnostic.waiting_expected=a->expected;
+    d->source_diagnostic.waiting_actual=a->actual;
+    if(!d->source_diagnostic.waiting_unavailable_failures)
+        d->source_diagnostic.waiting_unavailable_since=r->counter;
+    if(!d->source_diagnostic.waiting_unavailable_failures||
+       d->source_diagnostic.waiting_unavailable_counter!=r->counter)
+        d->source_diagnostic.waiting_unavailable_failures++;
+    d->source_diagnostic.waiting_unavailable_counter=r->counter;
     /* Losing a conditional trajectory is not a failed environment write.
        Cancel every old token/plan; only a new complete actual seed may query.
        Keep player execution and the established source/RTC ownership intact. */
@@ -155,43 +538,58 @@ static int observe_waiting(Device *d,const ManualSourceBinding *fresh){
         &d->binding.last_prompt,d->binding.source_epoch,&observed,&actual,&d->waiting_read_diagnostic);
     if(scope)ch_3ds_read_end(&d->backend);
     if(status!=1){
-        if(fresh)return 0;
-        waiting_discard(d,WAIT_DIAG_ALIGNMENT,0,0,0);return 1;
+        if(fresh){
+            /* Initial admission failures also need a public read-only record.
+               Do not cancel runtime plans or count a waiting-trajectory loss. */
+            d->source_diagnostic.waiting_stage=RAW_WAIT_DIAG_ALIGNMENT;
+            save_waiting_alignment(d);return 0;
+        }
+        waiting_discard(d,RAW_WAIT_DIAG_ALIGNMENT,0,0,0);return 1;
     }
     if(fresh){
         if(observed.counter!=fresh->origin_counter||actual.a!=fresh->rng_add||
-           actual.s!=fresh->rng_sub||observed.epoch!=fresh->source_epoch)return 0;
+           actual.s!=fresh->rng_sub||observed.epoch!=fresh->source_epoch){
+            d->source_diagnostic.waiting_stage=RAW_WAIT_DIAG_BINDING;
+            d->source_diagnostic.waiting_actual=actual;
+            memset(&d->source_diagnostic.waiting_expected,0,sizeof(d->source_diagnostic.waiting_expected));
+            d->source_diagnostic.waiting_expected.a=fresh->rng_add;
+            d->source_diagnostic.waiting_expected.s=fresh->rng_sub;
+            save_waiting_alignment(d);return 0;
+        }
+        d->source_diagnostic.waiting_stage=0u;
     }else{
         if(observed.counter!=r->counter||observed.epoch!=r->source.source_epoch||
            actual.bg!=(r->source_bg+(observed.counter-r->source.origin_counter)%3u)%3u){
-            waiting_discard(d,WAIT_DIAG_BINDING,0,&actual,&observed);
+            waiting_discard(d,RAW_WAIT_DIAG_BINDING,0,&actual,&observed);
             r->refresh_needed=1u;return 1;
         }
         if(!r->waiting_valid||!d->waiting_observation_valid)goto accept_actual;
         delta=observed.counter-r->waiting_counter;
-        if(delta>1u){waiting_discard(d,WAIT_DIAG_COUNTER,0,&actual,&observed);goto accept_actual;}
+        if(delta>1u){waiting_discard(d,RAW_WAIT_DIAG_COUNTER,0,&actual,&observed);goto accept_actual;}
         expected=r->waiting;
         if(delta&&!cq_waiting_next(&expected)){
-            waiting_discard(d,WAIT_DIAG_PROJECTION,0,&actual,&observed);goto accept_actual;}
+            waiting_discard(d,RAW_WAIT_DIAG_PROJECTION,0,&actual,&observed);goto accept_actual;}
         if(memcmp(&expected,&actual,sizeof(actual))){
-            waiting_discard(d,WAIT_DIAG_STATE,&expected,&actual,&observed);goto accept_actual;}
+            waiting_discard(d,RAW_WAIT_DIAG_STATE,&expected,&actual,&observed);goto accept_actual;}
         if(delta){
             memset(&conditions,0,sizeof(conditions));conditions.abi=SOURCE_OBSERVER_ABI;
             conditions.restricted_wait_path_model=1u;conditions.normal_pair_count=1u;
             conditions.epoch=observed.epoch;conditions.before_counter=r->waiting_counter;
             conditions.after_counter=observed.counter;
             if(source_observer_infer(&d->waiting_observation,&observed,&conditions,&pair)!=SOURCE_OBSERVER_OK){
-                waiting_discard(d,WAIT_DIAG_INFER,&expected,&actual,&observed);goto accept_actual;}
+                waiting_discard(d,RAW_WAIT_DIAG_INFER,&expected,&actual,&observed);goto accept_actual;}
             /* Check both operands independently from RNG changes, without
                scanning empirical phase hypotheses on the emulation thread. */
             {uint8_t predicted[2];
              if(!released_normal_pair21(&r->waiting.clock,predicted)||
                 pair.div1!=predicted[0]||pair.div2!=predicted[1]){
-                 waiting_discard(d,WAIT_DIAG_OPERANDS,&expected,&actual,&observed);goto accept_actual;}}
+                 waiting_discard(d,RAW_WAIT_DIAG_OPERANDS,&expected,&actual,&observed);goto accept_actual;}}
         }
     }
 accept_actual:
     r->waiting=actual;r->waiting_counter=observed.counter;r->waiting_valid=1u;
+    d->source_diagnostic.waiting_unavailable_failures=0;
+    d->source_diagnostic.waiting_unavailable_since=d->source_diagnostic.waiting_unavailable_counter=0;
     d->waiting_observation=observed;d->waiting_observation_valid=1u;return 1;
 }
 static int refresh_source(Device *d,const ChNativeContext *c,ManualSourceBinding *s,uint64_t *generation){
@@ -199,7 +597,8 @@ static int refresh_source(Device *d,const ChNativeContext *c,ManualSourceBinding
     int got=0;
     if(!r->refresh_needed||(!r->search_started&&r->runtime!=CH_RUNTIME_STEPPING)||r->step_by_physical_a||
        r->original_raw_a_seen||r->actual_raw_press_seen||r->encounter_started||r->fault||
-       r->controls.candidate_valid||r->plan_active||!r->source_bound||!d->source_available||
+       r->controls.candidate_valid||r->plan_active||
+       (!r->source_bound&&!raw_runtime_source_recovery_pending(r))||!d->source_available||
        !d->environment.state.initial_applied||!d->environment.state.rtc_owned||
        d->environment.state.terminal_applied||d->environment.state.poisoned||
        d->environment.cleanup_attempted||d->environment.terminal_attempted)return 0;
@@ -210,18 +609,22 @@ static int refresh_source(Device *d,const ChNativeContext *c,ManualSourceBinding
     /* Repeated original callbacks at this counted unit cannot redo a failed
        request. Only a later real counter boundary permits another attempt. */
     if(d->refresh_attempted&&d->refresh_attempt_counter==b->counter)return 0;
+    if(d->source_diagnostic.refresh_readonly_retries&&
+       b->counter-d->source_diagnostic.refresh_retry_counter<RAW_SOURCE_RETRY_ADVANCES)return 0;
     d->refresh_attempted=1;d->refresh_attempt_counter=b->counter;
-    if(raw_environment_initial_cpu_check(&d->binding.read)!=RAW_ENV_CPU_MATCH)return 0;
-    if(!raw_environment_backend_enter(&d->environment_backend,c))return -1;
+    d->source_diagnostic.cpu_check_status=(uint32_t)raw_environment_initial_cpu_check(&d->binding.read);
+    if(d->source_diagnostic.cpu_check_status!=RAW_ENV_CPU_MATCH)return 0;
+    if(!raw_environment_backend_enter(&d->environment_backend,c))return stop_source(d,RAW_SOURCE_STOP_OWNERSHIP);
+    d->source_diagnostic.waiting_stage=0;
     memset(&d->refresh_result_source,0,sizeof(d->refresh_result_source));
     d->refresh_result_source.epoch=d->binding.source_epoch;
-    if(ch_result_read_snapshot(&d->binding.read,&d->refresh_result_source.source)){
+    if(result_snapshot_traced(d,&d->refresh_result_source.source)){
         ch_platform_sha256((const uint8_t *)&d->refresh_result_source.source,
             sizeof(d->refresh_result_source.source),d->refresh_result_source.source_identity);
         if(ch_result_begin(&d->refresh_result_gate,&d->refresh_result_source)==CH_RESULT_PENDING){
             got=raw_environment_session_rebase(&d->environment,c,tls(),d->binding.source_epoch,&d->capture,s,generation);
             if(got){
-                if(!ch_result_read_snapshot(&d->binding.read,&d->result_snapshot)||
+                if(!result_snapshot_traced(d,&d->result_snapshot)||
                    memcmp(&d->refresh_result_source.source,&d->result_snapshot,sizeof(d->result_snapshot)))got=-1;
                 else{
                     memcpy(d->refresh_result_source.source_identity,s->source_identity.bytes,32);
@@ -233,10 +636,15 @@ static int refresh_source(Device *d,const ChNativeContext *c,ManualSourceBinding
                 }
             }else if(d->environment.last_status==RAW_ENV_STORE_FAILED||
                      d->environment.last_status==RAW_ENV_POISONED||d->environment.state.poisoned)got=-1;
-        }
-    }
+            else got=retry_refresh_readonly(d,b->counter);
+        }else got=-1;
+    }else if(d->source_diagnostic.result_read_kind==RAW_RESULT_READ_FAILED||
+             d->source_diagnostic.result_read_kind==RAW_RESULT_READS_DISAGREED)
+        got=retry_refresh_readonly(d,b->counter);
+    else got=-1;
     if(got==1){r->source_bg=d->environment.state.source_bg;
-        if(!observe_waiting(d,s))got=-1;}
+        if(!observe_waiting(d,s))got=-1;
+        else d->source_diagnostic.refresh_readonly_retries=0;}
     raw_environment_backend_leave(&d->environment_backend);return got;
 }
 static int source(void *u,const ChNativeContext *c,ManualSourceBinding *s,uint64_t *generation){
@@ -246,7 +654,16 @@ static int source(void *u,const ChNativeContext *c,ManualSourceBinding *s,uint64
        original engine caller, never on the solver or presentation thread. */
     LightLock_Lock(&d->source_lock);
     if(ch_raw_service.runtime.refresh_needed){
-        admitted=refresh_source(d,c,s,generation);goto done;
+        admitted=refresh_source(d,c,s,generation);
+        if(admitted<0){
+            uint32_t phase=a->closed&&a->phase>=RAW_SOURCE_STOP_OWNERSHIP&&a->phase<=RAW_SOURCE_STOP_VERIFY?
+                a->phase:d->environment.state.poisoned||d->environment.last_status==RAW_ENV_POISONED?
+                RAW_SOURCE_STOP_POISON:d->environment.last_status==RAW_ENV_STORE_FAILED?
+                RAW_SOURCE_STOP_STORE:RAW_SOURCE_STOP_VERIFY;
+            a->result_reason=d->refresh_result_gate.reason;
+            admitted=stop_source(d,phase);
+        }
+        goto done;
     }
     if(ch_raw_service.runtime.search_requested&&!a->closed)d->source_requested=1;
     if(!d->source_requested||a->closed)goto done;
@@ -285,25 +702,30 @@ static int source(void *u,const ChNativeContext *c,ManualSourceBinding *s,uint64
     if(d->environment.state.preparation_applied&&b->counter==d->environment.state.preparation_counter){
         a->phase=RAW_SOURCE_PREPARED;goto done;
     }
+    if(d->environment.state.preparation_applied&&a->initial_readonly_retries&&
+       b->counter-a->initial_retry_counter<RAW_SOURCE_RETRY_ADVANCES)goto done;
     if(a->attempts&&!d->environment.state.preparation_applied&&b->counter-a->last_attempt_counter<16u)goto done;
     a->attempts++;a->last_attempt_counter=b->counter;
-    /* Reject a known unsupported CPU context with only five small reads.
-       This filter is not an admission receipt. A match must still pass the
-       independent full capture, environment preflight and result origin. */
+    a->result_enemy_nonzero=0u;a->result_enemy_first_index=UINT32_MAX;a->result_enemy_first_value=0u;
+    a->result_reason=0u;a->environment_rejection=RAW_ENV_SOURCE_PREFLIGHT;
+    a->result_read_kind=0u;a->result_read_calls=0u;a->result_read_ordinal=0u;
+    a->result_read_address=0u;a->result_read_size=0u;
+    /* Check only semantic CPU/context invariants with five small reads.
+       A match is not admission: full capture, environment preflight and
+       result-origin validation still run independently. */
     a->cpu_check_status=(uint32_t)raw_environment_initial_cpu_check(&d->binding.read);
     if(d->environment.state.preparation_applied&&a->cpu_check_status!=(uint32_t)RAW_ENV_CPU_MATCH) {
         a->phase=a->cpu_check_status==(uint32_t)RAW_ENV_CPU_MISMATCH?
             RAW_SOURCE_WAIT_CPU_CONTEXT:RAW_SOURCE_WAIT_CPU_READ;
         a->environment_rejection=a->cpu_check_status==(uint32_t)RAW_ENV_CPU_MISMATCH?RAW_ENV_SOURCE_CPU:RAW_ENV_SOURCE_CAPTURE;
-        if(b->counter-d->environment.state.preparation_counter>=16u)
-            admitted=stop_source(d,RAW_SOURCE_STOP_VERIFY);
+        admitted=retry_initial_readonly(d,b->counter);
         goto done;
     }
     a->full_attempts++;
     if(raw_environment_backend_enter(&d->environment_backend,c)){
         memset(&d->result_source,0,sizeof(d->result_source));
         d->result_source.epoch=d->binding.source_epoch;
-        if(ch_result_read_snapshot(&d->binding.read,&d->result_source.source)) {
+        if(result_snapshot_traced(d,&d->result_source.source)) {
             /* Preliminary gate uses this exact read image's real digest. The
                final gate binds the larger source receipt returned below. */
             ch_platform_sha256((const uint8_t *)&d->result_source.source,
@@ -320,7 +742,12 @@ static int source(void *u,const ChNativeContext *c,ManualSourceBinding *s,uint64
                         admitted=stop_source(d,RAW_SOURCE_STOP_STORE);
                     else if(d->environment.last_status==RAW_ENV_POISONED||d->environment.state.poisoned)
                         admitted=stop_source(d,RAW_SOURCE_STOP_POISON);
-                    else a->phase=RAW_SOURCE_WAIT_PREFLIGHT;
+                    else {
+                        a->environment_rejection=raw_environment_initial_source_rejection(&d->environment.plan,&d->environment.state);
+                        if(a->environment_rejection==RAW_ENV_SOURCE_SAVE_TIME)
+                            admitted=stop_source(d,RAW_SOURCE_STOP_VERIFY);
+                        else a->phase=RAW_SOURCE_WAIT_PREFLIGHT;
+                    }
                     goto backend_done;
                 }
                 got=raw_environment_session_source(&d->environment,c,tls(),d->binding.source_epoch,&d->capture,s,generation);
@@ -328,7 +755,7 @@ static int source(void *u,const ChNativeContext *c,ManualSourceBinding *s,uint64
                     /* Close before post-apply verification: even a later
                        verification failure cannot reapply or rebuild source. */
                     d->source_requested=0;a->closed=1;
-                    if(!ch_result_read_snapshot(&d->binding.read,&d->result_snapshot)||
+                    if(!result_snapshot_traced(d,&d->result_snapshot)||
                        memcmp(&d->result_source.source,&d->result_snapshot,sizeof(d->result_snapshot))) {
                         got=0;admitted=stop_source(d,RAW_SOURCE_STOP_VERIFY);
                     } else {
@@ -346,31 +773,48 @@ static int source(void *u,const ChNativeContext *c,ManualSourceBinding *s,uint64
                     admitted=stop_source(d,RAW_SOURCE_STOP_STORE);
                 else if(d->environment.last_status==RAW_ENV_POISONED||d->environment.state.poisoned)
                     admitted=stop_source(d,RAW_SOURCE_STOP_POISON);
-                else if(d->environment.state.initial_applied||d->environment.state.rtc_owned)
+                else if(d->environment.state.initial_applied||
+                        (d->environment.state.rtc_owned&&!d->environment.state.preparation_applied))
                     admitted=stop_source(d,RAW_SOURCE_STOP_APPLIED);
                 else {
                     a->environment_rejection=raw_environment_initial_source_rejection(&d->environment.plan,&d->environment.state);
-                    a->phase=a->environment_rejection==RAW_ENV_SOURCE_CPU?
-                        RAW_SOURCE_WAIT_CPU_CONTEXT:RAW_SOURCE_WAIT_PREFLIGHT;
+                    if(a->environment_rejection==RAW_ENV_SOURCE_SAVE_TIME)
+                        admitted=stop_source(d,RAW_SOURCE_STOP_VERIFY);
+                    else a->phase=a->environment_rejection==RAW_ENV_SOURCE_CPU?
+                            RAW_SOURCE_WAIT_CPU_CONTEXT:RAW_SOURCE_WAIT_PREFLIGHT;
                 }
             } else if(d->result_gate.reason==CH_RESULT_BAD_PATH)
                 admitted=stop_source(d,RAW_SOURCE_STOP_PATH);
             else {
                 a->phase=RAW_SOURCE_WAIT_RESULT;
+                a->result_enemy_nonzero=0u;a->result_enemy_first_index=UINT32_MAX;
+                a->result_enemy_first_value=0u;
                 for(i=0;i<CH_RESULT_ENEMY_BYTES;i++)if(d->result_source.source.enemy[i]) {
-                    a->phase=RAW_SOURCE_WAIT_ENEMY;break;
+                    if(a->result_enemy_first_index==UINT32_MAX){
+                        a->result_enemy_first_index=i;a->result_enemy_first_value=d->result_source.source.enemy[i];
+                    }
+                    a->result_enemy_nonzero++;
                 }
+                if(a->result_enemy_nonzero)a->phase=RAW_SOURCE_WAIT_ENEMY;
             }
         } else a->phase=RAW_SOURCE_WAIT_READ;
 backend_done:
+        if(!got&&!admitted&&d->environment.state.preparation_applied&&
+           !d->environment.state.initial_applied&&!d->environment.state.poisoned&&
+           a->phase!=RAW_SOURCE_PREPARED)
+            admitted=retry_initial_readonly(d,b->counter);
         raw_environment_backend_leave(&d->environment_backend);
     } else admitted=stop_source(d,RAW_SOURCE_STOP_OWNERSHIP);
     if(got){
         ch_raw_service.runtime.source_bg=d->environment.state.source_bg;
-        if(observe_waiting(d,s)){d->source_available=1;a->phase=RAW_SOURCE_ADMITTED;admitted=1;}
+        if(observe_waiting(d,s)){d->source_available=1;a->phase=RAW_SOURCE_ADMITTED;
+            a->initial_readonly_retries=0;admitted=1;}
         else{got=0;admitted=stop_source(d,RAW_SOURCE_STOP_VERIFY);}
     }
 done:
+    /* Preserve the failing operation's status; successful RTC cleanup must
+       not replace an environment-store error with an apparent OK receipt. */
+    a->environment_status=d->environment.last_status;
     /* Failed preparation/admission must release an owned RTC instruction at
        the same original caller. No second environment attempt follows. */
     if(admitted<0&&d->environment.state.rtc_owned&&!d->environment.cleanup_attempted&&
@@ -378,9 +822,11 @@ done:
         d->environment.cleanup_attempted=1;
         d->environment.last_status=(uint32_t)raw_environment_restore_rtc(&d->environment.ops,&d->environment.state);
         raw_environment_backend_leave(&d->environment_backend);
-        if(d->environment.state.poisoned)a->phase=RAW_SOURCE_STOP_POISON;
+        if(d->environment.state.poisoned){
+            a->phase=RAW_SOURCE_STOP_POISON;a->environment_status=RAW_ENV_POISONED;
+        }
     }
-    a->environment_status=d->environment.last_status;a->result_reason=d->result_gate.reason;
+    if(admitted>=0||!ch_raw_service.runtime.refresh_needed)a->result_reason=d->result_gate.reason;
     LightLock_Unlock(&d->source_lock);
     /* The returned prediction remains conditional. A paired role read is
        neither global external-writer quiescence nor manual hardware proof. */
@@ -438,7 +884,7 @@ static void completed_owned(void *u,const ChNativeContext *c,RawRuntime *r,uint3
     receipt.press_observed=r->actual_raw_press_seen&&r->encounter_started;
     status=ch_result_observe_progress(&d->result_gate,&d->result_progress,&receipt);
     if(status==CH_RESULT_READY){
-        if(!ch_result_read_snapshot(&d->binding.read,&d->result_snapshot)){
+        if(!result_snapshot_traced(d,&d->result_snapshot)){
             ch_result_invalidate(&d->result_gate,CH_RESULT_BAD_MAPPING);return;
         }
         status=ch_result_complete(&d->result_gate,&d->result_snapshot,&d->actual_result);
@@ -485,7 +931,8 @@ int raw_device_startup(const RawDeviceHostOps *host){
     memset(&device,0,sizeof(device));if(host)device.host=*host;device.backend.startup_owned=1;
     device.startup_phase=1;
     device.binding.source_epoch=1;device.source_requested=0;
-    device.source_diagnostic.version=1;
+    device.source_diagnostic.version=5;
+    device.source_diagnostic.result_enemy_first_index=UINT32_MAX;
     LightLock_Init(&device.job_lock);LightLock_Init(&device.hud_lock);LightLock_Init(&device.source_lock);
     raw_mailbox_init(&device.mailbox);ch_3ds_backend_ops(&device.backend,&install_ops,&device.binding.read);
     if(!raw_hud_3ds_sink_init(&device.screen,0,0)||!raw_present_prepare(&device.presentation,&device.binding.read))return 0;

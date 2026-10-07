@@ -2,13 +2,13 @@ Author: CelebiHunter contributors
 
 Version:
     Major: 1
-    Minor: 2
+    Minor: 3
     Revision: 0
 
 Targets:
     - 0x00172800
 
-Title: CelebiHunter v1.2.0
+Title: CelebiHunter v1.3.0
 
 Summary: Retained-environment DIV candidate prediction; hardware acceptance pending
 

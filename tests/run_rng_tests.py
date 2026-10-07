@@ -1,4 +1,4 @@
-"""Run the RNG v1.2.0 host regressions with a C99 compiler.
+"""Run the RNG v1.3.0 host regressions with a C99 compiler.
 
 Use CC (or --cc) for gcc/clang, or ZIG (or --zig) for `zig cc`.
 The copied C scenarios and Python scalar/native-fixture assertions keep their
@@ -87,6 +87,19 @@ def run_tests(compiler: list[str], build: Path) -> None:
     scenarios = (
         ("test_runtime_candidate", COMMON_SOURCES, []),
         ("test_long_plan", COMMON_SOURCES + ("environment_session.c",), []),
+        ("test_platform_sampler_compat", ("platform/sampler.c",), []),
+        ("test_platform_scene_diagnostics", ("platform/scene.c",), []),
+        ("test_result_gate", ("result/result_gate.c",), []),
+        (
+            "test_environment_compat",
+            ("environment.c", "environment_session.c", "source_capture.c",
+             "raw_runtime.c", "controller/manual_controller.c",
+             "platform/sampler.c", "platform/scene.c", "platform/source_hash.c",
+             "prediction/manual_prediction.c", "source-observer/aligned_waiting.c",
+             "candidate-query/query.c", "candidate-query/terminal_eval.c",
+             "input-plan/manual_input_plan.c", "result/result_gate.c"),
+            ["-Wno-misleading-indentation"],
+        ),
         (
             "test_waiting_device",
             WAITING_SOURCES,
@@ -126,7 +139,7 @@ def run_tests(compiler: list[str], build: Path) -> None:
     for name in ("check_terminal.py", "check_query.py"):
         print(f"RNG: {name}", flush=True)
         run([sys.executable, str(TESTS / name), str(library)], env)
-    print("RNG host tests passed (5 regression groups).", flush=True)
+    print("RNG host tests passed (9 regression groups).", flush=True)
 
 
 def main() -> int:

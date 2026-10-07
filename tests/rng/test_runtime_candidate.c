@@ -1,4 +1,5 @@
 #include "raw_service.h"
+#include "query_completion.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,7 +85,7 @@ static void hud_dv_fields(const RawHud *h,int predicted_valid,uint32_t predicted
 static void hud_excludes_old_input_failure(const RawHud *h) {
     uint32_t i;
     CHECK(h->count<=7);
-    CHECK(!strcmp(h->line[0],"CelebiHunter v1.2.0"));
+    CHECK(!strcmp(h->line[0],"CelebiHunter v1.3.0"));
     CHECK(!strcmp(h->line[h->count-1],"Start+Up: show/hide HUD"));
     for(i=0;i<h->count;i++){
         CHECK(strlen(h->line[i])<=50u);
@@ -140,29 +141,34 @@ static void test_missed_and_wrong_input(void) {
     unit(&s,1);unit(&s,1);CHECK(r.encounter_started);CHECK(r.encounter_candidate.status==MANUAL_QUERY_INVALID);
     CHECK(!r.input_condition_matches);
     raw_runtime_hud(&r,&h);hud_excludes_old_input_failure(&h);
-    CHECK(h.count==6u&&!h.line[3][0]);
+    CHECK(h.count==7u&&!h.line[4][0]);
+    CHECK(r.encounter_forecast_reason==RAW_ENCOUNTER_FORECAST_OFF_TARGET);
+    CHECK(hud_has(&h,"A pressed outside target Advance [R11]"));
+    CHECK(!hud_has(&h,"Source check failed [R10]"));
     hud_dv_fields(&h,0,0,0,0);
     unit(&s,0);CHECK(r.release_seen);
     raw_runtime_actual_dv(&r,(uint16_t)old.predicted_dv);
     raw_runtime_hud(&r,&h);hud_excludes_old_input_failure(&h);
     hud_dv_fields(&h,0,0,1,old.predicted_dv);
-    /* Same off-target press through the production runtime and terminal
-       rejection path. UI diagnosis must not change the runtime fault. */
+    /* A real environment failure remains distinct from this ordinary
+       off-target encounter, including when an old MP error is still stored. */
     CHECK(r.actual_raw_press_seen&&r.actual_raw_press!=r.raw_target);
     CHECK(r.plan_failed&&r.input_plan.error==MP_INPUT_MISMATCH);
     raw_runtime_environment_failed(&r);raw_runtime_hud(&r,&h);
     CHECK(r.fault==RAW_FAULT_ENVIRONMENT);
-    CHECK(hud_has(&h,"A pressed outside target Advance"));
-    CHECK(!hud_has(&h,"State check failed; no forecast"));
+    CHECK(hud_has(&h,"Source check failed [R10]"));
+    CHECK(!hud_has(&h,"A pressed outside target Advance [R11]"));
     CHECK(h.count==7u&&!h.line[4][0]);hud_excludes_old_input_failure(&h);
     /* A write/read failure or different recorded control fault cannot be
        relabelled as a player timing error merely because A was pressed. */
     r.input_plan.error=MP_COUNTER_MISMATCH;raw_runtime_hud(&r,&h);
-    CHECK(hud_has(&h,"State check failed; no forecast"));
+    CHECK(hud_has(&h,"Source check failed [R10]"));
+    CHECK(!hud_has(&h,"A pressed outside target Advance [R11]"));
     r.input_plan.error=MP_INPUT_MISMATCH;r.actual_raw_press=r.raw_target;
-    raw_runtime_hud(&r,&h);CHECK(hud_has(&h,"State check failed; no forecast"));
+    raw_runtime_hud(&r,&h);CHECK(hud_has(&h,"Source check failed [R10]"));
+    CHECK(!hud_has(&h,"A pressed outside target Advance [R11]"));
     r.actual_raw_press++;r.fault=RAW_FAULT_DISPLAY;raw_runtime_hud(&r,&h);
-    CHECK(hud_has(&h,"Display fault; no forecast"));
+    CHECK(hud_has(&h,"Display fault [R20]"));
 }
 static void test_noncanonical_release_hud_keeps_DV_and_certificate_separate(void) {
     RawSample s;RawHud h;uint32_t which,raw,effective,release,predicted;
@@ -374,7 +380,7 @@ static void test_player_paused_ready_A_resumes_and_observes_release(void) {
     CHECK(!r.input_plan.manual_hardware_verified);
     raw_runtime_actual_dv(&r,(uint16_t)r.encounter_candidate.predicted_dv);
     raw_runtime_hud(&r,&h);hud_excludes_old_input_failure(&h);
-    CHECK(hud_has(&h,"CelebiHunter v1.2.0"));
+    CHECK(hud_has(&h,"CelebiHunter v1.3.0"));
     hud_dv_fields(&h,1,r.encounter_candidate.predicted_dv,1,r.encounter_candidate.predicted_dv);
 }
 static void test_player_leaves_prompt(void) {
@@ -515,9 +521,135 @@ static void test_compact_hud_layout(void){
         hud_dv_fields(&h,1,0xfaaa,r.actual_seen,0x2aaa);
     }
     r.fault=RAW_FAULT_DISPLAY;raw_runtime_hud(&r,&h);hud_excludes_old_input_failure(&h);
-    CHECK(h.count==7u&&!h.line[4][0]&&hud_has(&h,"Display fault; no forecast"));
+    CHECK(h.count==7u&&!h.line[4][0]&&hud_has(&h,"Display fault [R20]"));
     r.fault=0;r.counter_valid=0;r.encounter_started=0;r.controls.candidate_valid=0;
     raw_runtime_hud(&r,&h);CHECK(hud_has(&h,"Advance -- | Target --"));hud_dv_fields(&h,0,0,1,0x2aaa);
+}
+
+static void test_hud_failure_codes(void){
+    RawHud h;uint32_t i,j;int found;const struct {uint32_t status,detail;const char *expected;} cases[]={
+        {MANUAL_QUERY_INVALID,RAW_QUERY_DETAIL_JOB_BINDING,"Copied search input failed validation [Q01]"},
+        {MANUAL_QUERY_INVALID,RAW_QUERY_DETAIL_RESULT_BINDING,"Search result no longer matches live state [Q02]"},
+        {MANUAL_QUERY_INVALID,RAW_QUERY_DETAIL_PLAN_ADMISSION,"Player input plan could not be tracked [Q03]"},
+        {MANUAL_QUERY_INVALID,RAW_QUERY_DETAIL_SUBMISSION,"Search job could not be queued [Q04]"},
+        {MANUAL_QUERY_INVALID,RAW_QUERY_DETAIL_WORKER_STATUS,"Search worker rejected its input [Q05]"},
+        {MANUAL_QUERY_STALE_SOURCE,RAW_QUERY_DETAIL_NONE,"Live source changed [Q06]"},
+        {MANUAL_QUERY_OUTSIDE_DOMAIN,RAW_QUERY_DETAIL_WINDOW_EXPIRED,"Source window expired; refreshing [Q07]"},
+        {MANUAL_QUERY_SOLVER_BOUND,RAW_QUERY_DETAIL_NONE,"Search limit reached [Q08]"},
+        {MANUAL_QUERY_UNSUPPORTED_CERTIFICATE,RAW_QUERY_DETAIL_NONE,"Timing profile unsupported [Q09]"},
+        {MANUAL_QUERY_OUTSIDE_DOMAIN,RAW_QUERY_DETAIL_NONE,"Search range outside model [Q10]"},
+        {MANUAL_QUERY_NO_FUTURE_CANDIDATE,RAW_QUERY_DETAIL_NONE,"No shiny in search window [Q11]"}
+    };
+    raw_runtime_init(&r,0);r.controls.overlay_visible=1;r.counter_valid=1;r.counter=100;
+    for(i=0;i<sizeof(cases)/sizeof(cases[0]);i++){
+        r.query_status=cases[i].status;r.query_failure_detail=cases[i].detail;
+        raw_runtime_hud(&r,&h);CHECK(hud_has(&h,cases[i].expected));
+    }
+    r.query_status=MANUAL_QUERY_INVALID;r.query_failure_detail=RAW_QUERY_DETAIL_NONE;
+    raw_runtime_hud(&r,&h);CHECK(hud_has(&h,"Search input invalid [Q00]"));
+    r.query_status=MANUAL_QUERY_OK;raw_runtime_hud(&r,&h);found=0;
+    for(j=0;j<h.count;j++)if(strstr(h.line[j],"[Q"))found=1;
+    CHECK(!found);
+}
+
+static void expect_runtime_fault(uint32_t fault,uint32_t control_fault,uint32_t plan_error,
+    uint32_t plan_failed,uint32_t display_pending,uint32_t display_error,const char *expected){
+    RawHud h;raw_runtime_init(&r,0);r.controls.overlay_visible=1;r.counter_valid=1;r.counter=100;
+    r.fault=fault;r.controls.fault=control_fault;r.input_plan.error=plan_error;
+    r.plan_failed=plan_failed;r.display_pending=display_pending;r.display_error=display_error;
+    raw_runtime_hud(&r,&h);CHECK(hud_has(&h,expected));
+}
+static void test_runtime_fault_codes(void){
+    expect_runtime_fault(RAW_FAULT_READ,0,0,0,0,0,"Game state read failed [R01]");
+    expect_runtime_fault(RAW_FAULT_UNIT,0,0,0,0,0,"Unsupported scheduler state [R02]");
+    expect_runtime_fault(RAW_FAULT_FILTER,0,0,0,0,0,"Input scan did not match [R03]");
+    expect_runtime_fault(RAW_FAULT_ORDER,0,0,0,0,0,"Unexpected game update [R04]");
+    expect_runtime_fault(RAW_FAULT_ORDER,CH_FAULT_BAD_ACK,0,0,0,0,"Pause/step acknowledgement failed [R05]");
+    expect_runtime_fault(RAW_FAULT_ORDER,CH_FAULT_STEP_OVERSHOT,0,0,0,0,"Step passed target Advance [R06]");
+    expect_runtime_fault(RAW_FAULT_ORDER,CH_FAULT_SCENE_CHANGED_DURING_COMMAND,0,0,0,0,"Scene changed during control [R07]");
+    expect_runtime_fault(RAW_FAULT_ORDER,CH_FAULT_COUNTER_DISCONTINUITY,0,0,0,0,"Advance counter discontinuity [R08]");
+    expect_runtime_fault(RAW_FAULT_COMMAND,0,0,0,0,0,"Pause/step request rejected [R09]");
+    expect_runtime_fault(RAW_FAULT_ENVIRONMENT,0,MP_BAD_ARGUMENT,0,0,0,"Source check failed [R10]");
+    expect_runtime_fault(RAW_FAULT_ENVIRONMENT,0,MP_INPUT_MISMATCH,1,0,0,"Source check failed [R10]");
+    expect_runtime_fault(RAW_FAULT_ENVIRONMENT,0,MP_COUNTER_MISMATCH,1,0,0,"Source check failed [R10]");
+    expect_runtime_fault(RAW_FAULT_DISPLAY,0,0,0,0,0,"Display fault [R20]");
+    expect_runtime_fault(RAW_FAULT_DISPLAY,0,0,0,1,0,"Display restore pending [R21]");
+    expect_runtime_fault(99,0,0,0,0,0,"Runtime check failed [R00]");
+    expect_runtime_fault(99,0,0,0,0,1,"Display not ready [R22]");
+}
+static void test_controller_counter_regression_reports_runtime_fault(void){
+    RawSample s=sample(200);ManualSourceBinding b=source(200),fresh;RawHud h;
+    raw_runtime_init(&r,0);raw_runtime_before_scan(&r,&s);poll(&s,0);
+    r.source_bg=2u;CHECK(bind_test_source(&r,&b,1u));poll(&s,0);
+    CHECK(!r.fault&&r.controls.fault==CH_FAULT_NONE&&r.controls.active_query.query_id);
+    /* Supply an actual backwards sample through the normal runtime entry and
+       UI poll. Neither fault field is fabricated by this test. */
+    s.counter=199u;raw_runtime_before_scan(&r,&s);poll(&s,0);
+    CHECK(r.controls.fault==CH_FAULT_COUNTER_DISCONTINUITY);
+    CHECK(r.fault==RAW_FAULT_ORDER&&r.runtime==CH_RUNTIME_RUNNING);
+    CHECK(!raw_runtime_source_recovery_pending(&r));
+    CHECK(!r.source_bound&&!r.waiting_valid&&!r.controls.candidate_valid);
+    CHECK(!r.view.query.query_id&&!r.controls.active_query.query_id);
+    raw_runtime_hud(&r,&h);CHECK(hud_has(&h,"Advance counter discontinuity [R08]"));
+    CHECK(!hud_has(&h,"Unexpected game update [R04]"));
+    /* A later good read cannot silently clear this control fault or revive
+       source acquisition after a genuine counter discontinuity. */
+    s.counter=200u;raw_runtime_before_scan(&r,&s);poll(&s,0);fresh=source(s.counter);
+    CHECK(!raw_runtime_bind_source(&r,&fresh,2u));
+    CHECK(r.fault==RAW_FAULT_ORDER&&r.controls.fault==CH_FAULT_COUNTER_DISCONTINUITY);
+    raw_runtime_hud(&r,&h);CHECK(hud_has(&h,"Advance counter discontinuity [R08]"));
+}
+static void expire_test_source(RawSample *s){ManualSourceBinding b=source(s->counter);
+    raw_runtime_init(&r,0);raw_runtime_before_scan(&r,s);poll(s,0);
+    r.source_bg=2u;CHECK(bind_test_source(&r,&b,1u));poll(s,0);
+    CHECK(r.source_bound&&r.waiting_valid&&!r.refresh_needed&&!r.fault);
+    /* A coherent scheduler sample can temporarily leave the model without
+       failing its memory read or requesting a player command. */
+    s->batch=2u;s->ordinary_supported=0u;raw_runtime_before_scan(&r,s);poll(s,0);
+    CHECK(!r.source_bound&&!r.waiting_valid&&!r.controls.candidate_valid);
+    CHECK(r.refresh_needed&&!r.fault&&r.runtime==CH_RUNTIME_RUNNING);
+    CHECK(raw_runtime_source_recovery_pending(&r));
+    CHECK(!r.view.command.kind&&!r.view.query.query_id);
+    *s=sample(s->counter+1u);raw_runtime_before_scan(&r,s);poll(s,0);
+    CHECK(r.refresh_needed&&!r.source_bound&&!r.waiting_valid);
+    CHECK(raw_runtime_source_recovery_pending(&r));
+    CHECK(!r.view.query.query_id&&!r.view.command.kind&&!r.fault);
+}
+static void test_transient_source_expiry_requires_new_released_binding(void){
+    RawSample s=sample(200);ManualSourceBinding fresh;uint32_t counter;
+    expire_test_source(&s);counter=s.counter;fresh=source(counter);
+    CHECK(!raw_runtime_bind_source(&r,&fresh,1u));
+    CHECK(bind_test_source(&r,&fresh,2u));poll(&s,0);
+    CHECK(r.source_bound&&r.waiting_valid&&!r.refresh_needed&&!r.fault);
+    CHECK(!raw_runtime_source_recovery_pending(&r));
+    CHECK(r.source_generation==2u&&r.source.origin_counter==counter);
+    CHECK(r.controls.active_query.query_id&&r.view.query.query_id);
+    CHECK(!r.view.command.kind&&s.counter==counter&&s.guest_mask==0xffffu);
+}
+static void test_refresh_binding_rejects_observed_A_and_departed_prompt(void){
+    RawSample s=sample(300);ManualSourceBinding fresh;
+    expire_test_source(&s);
+    /* Observe original scan input through the real runtime entry points,
+       then release it. Released input alone cannot erase the recorded A. */
+    unit(&s,CH_KEY_A);unit(&s,0);fresh=source(s.counter);
+    CHECK(r.original_raw_a_seen&&r.actual_raw_press_seen&&!r.encounter_started);
+    CHECK(!raw_runtime_source_recovery_pending(&r));
+    CHECK(!s.host_held&&!s.host_intersection&&s.guest_mask==0xffffu);
+    CHECK(!raw_runtime_bind_source(&r,&fresh,2u));
+    CHECK(!r.source_bound&&!r.waiting_valid&&!r.controls.candidate_valid);
+    CHECK(!r.view.query.query_id&&!r.view.command.kind&&!r.fault);
+    s=sample(400);expire_test_source(&s);s.script_final_prompt=0u;
+    raw_runtime_before_scan(&r,&s);poll(&s,0);fresh=source(s.counter);
+    CHECK(!raw_runtime_source_recovery_pending(&r));
+    CHECK(!raw_runtime_bind_source(&r,&fresh,2u));
+    CHECK(!r.source_bound&&!r.waiting_valid&&!r.controls.candidate_valid);
+    CHECK(!r.view.query.query_id&&!r.view.command.kind&&!r.fault);
+    /* A genuine read fault retains its existing prohibition on rebinding. */
+    s=sample(500);expire_test_source(&s);raw_runtime_sample_failed(&r);
+    s=sample(s.counter+1u);raw_runtime_before_scan(&r,&s);poll(&s,0);fresh=source(s.counter);
+    CHECK(r.fault==RAW_FAULT_READ&&!raw_runtime_bind_source(&r,&fresh,2u));
+    CHECK(!raw_runtime_source_recovery_pending(&r));
+    CHECK(!r.source_bound&&!r.waiting_valid&&!r.controls.candidate_valid&&!r.view.query.query_id);
 }
 
 static void test_actual_waiting_job_guards(void) {
@@ -558,5 +690,10 @@ int main(void) {
     test_one_L_release_never_repeats_and_plus_two_faults();
     test_released_GS_arrival_starts_running_search();
     test_compact_hud_layout();
-    printf("passed: %u assertions, 16 retained scenario groups + actual waiting job guards\n",checks);return 0;
+    test_hud_failure_codes();
+    test_runtime_fault_codes();
+    test_controller_counter_regression_reports_runtime_fault();
+    test_transient_source_expiry_requires_new_released_binding();
+    test_refresh_binding_rejects_observed_A_and_departed_prompt();
+    printf("passed: %u assertions, runtime/control scenarios + actual waiting job guards\n",checks);return 0;
 }

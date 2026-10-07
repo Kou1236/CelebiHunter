@@ -5,7 +5,8 @@ enum { RAW_ENV_INITIAL=1,RAW_ENV_TERMINAL=2,RAW_ENV_PREPARATION=3,RAW_ENV_REBASE
 enum { RAW_ENV_OK=0,RAW_ENV_REJECTED=1,RAW_ENV_STORE_FAILED=2,RAW_ENV_POISONED=3 };
 enum {
     RAW_ENV_SOURCE_PREFLIGHT=0,RAW_ENV_SOURCE_CAPTURE=1,RAW_ENV_SOURCE_LAYOUT=2,
-    RAW_ENV_SOURCE_STATE=3,RAW_ENV_SOURCE_RTC=4,RAW_ENV_SOURCE_CPU=5
+    RAW_ENV_SOURCE_STATE=3,RAW_ENV_SOURCE_RTC=4,RAW_ENV_SOURCE_CPU=5,
+    RAW_ENV_SOURCE_SAVE_TIME=6
 };
 enum { RAW_ENV_CPU_UNREADABLE=-1,RAW_ENV_CPU_MISMATCH=0,RAW_ENV_CPU_MATCH=1 };
 #define RAW_ENV_MAX_WRITES 4096u
@@ -28,7 +29,8 @@ typedef struct {
     uint32_t origin_counter;
     uint8_t source_identity[32],nonbudget_CPU_identity[32];
     /* Preparation owns time settings, never a prediction origin. INITIAL
-       must capture a later released source and match the full CPU34. */
+       must capture a later released source that passes semantic CPU guards;
+       a per-session identity then binds later result observations. */
     uint32_t preparation_applied,preparation_counter;
     uint8_t preparation_start_time[4];
     uint8_t preparation_rtc[5];
@@ -52,7 +54,7 @@ typedef struct {
 /* Build from this caller's full actual before image. PREPARATION is released,
    with a guarded RTC input derived from that save's StartTime, without source admission.
    INITIAL is released; after preparation it requires a later
-   original released source and full selected CPU34. TERMINAL additionally
+   original released source with valid semantic CPU context. TERMINAL additionally
    binds the raw/effective scan receipts and three-call conditional prediction,
    and rejects a predicted DIV that differs from the captured original DIV.
    The early-stage div_x=183 argument remains a compatibility check only.
@@ -65,10 +67,14 @@ int raw_environment_apply(const RawEnvironmentOps *,RawEnvironmentState *,const 
    neither rereads process state nor changes any admission/hash condition.
    PREFLIGHT covers guards whose input was not retained in that image. */
 uint32_t raw_environment_initial_source_rejection(const RawEnvironmentPlan *,const RawEnvironmentState *);
-/* Read-only 34-byte early rejection filter. MATCH never establishes source
-   admission: the complete captured-image prepare/apply guards still run. */
+/* Read-only semantic CPU/context filter. MATCH never establishes source
+   admission: full capture, event, timing and prepare/apply guards still run. */
 int raw_environment_initial_cpu_check(const ChReadOps *);
-int raw_environment_data_address(uint32_t address);
+/* Pure conversion, preserving StartTime. Reject offsets that cannot produce
+   the exact model clock through original FixDays followed by FixTime. */
+int raw_environment_derive_preparation_rtc(const uint8_t start[4],uint8_t out[5]);
+int raw_environment_data_address(const ChReadOps *read,uint32_t address);
+int raw_environment_data_range(const ChReadOps *read,uint32_t address,uint32_t size);
 /* Restore only our owned instruction attempt, never foreign bytes. This is
    available even after poison; cleanup cannot clear poison or reactivate a
    source. Data settings remain authorized choices, no saved gameplay restore. */

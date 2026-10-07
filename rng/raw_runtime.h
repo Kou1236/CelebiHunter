@@ -19,6 +19,10 @@ enum { RAW_EVENT_BEFORE_SCAN=1,RAW_EVENT_AFTER_SCAN=2,
 enum { RAW_FAULT_NONE=0,RAW_FAULT_READ=1,RAW_FAULT_UNIT=2,
        RAW_FAULT_FILTER=3,RAW_FAULT_ORDER=4,RAW_FAULT_COMMAND=5,RAW_FAULT_ENVIRONMENT=6,
        RAW_FAULT_DISPLAY=7 };
+/* A real encounter may have no conditional forecast. This is an observation,
+ * separate from failed source reads, environment writes or player commands. */
+enum { RAW_ENCOUNTER_FORECAST_NONE=0,RAW_ENCOUNTER_FORECAST_OFF_TARGET=1,
+       RAW_ENCOUNTER_FORECAST_UNAVAILABLE=2 };
 #define RAW_LOG_CAPACITY 128u
 #define RAW_INPUT_PLAN_WINDOW 64u
 typedef struct {
@@ -38,6 +42,7 @@ typedef struct {
     ManualPrediction candidate,encounter_candidate;
     uint32_t source_bound,raw_target,effective_target,release_target;
     uint32_t guest_a_previous,guest_a_initialized,encounter_started;
+    uint32_t encounter_forecast_reason;
     uint32_t effective_press,effective_release,release_seen,actual_dv,actual_seen;
     uint32_t input_condition_matches;
     MpInputPlan input_plan;
@@ -57,6 +62,16 @@ typedef struct {
     CQWaitingState waiting;
     uint32_t waiting_counter,waiting_valid;
 } RawRuntime;
+
+/* A transient running-unit mismatch expires the forecast, but can retain an
+   owned environment until a fresh, fully checked released origin is obtained.
+   Leaving this prompt, real A or any fault ends that recovery opportunity. */
+static inline int raw_runtime_source_recovery_pending(const RawRuntime *r){
+    return r&&r->refresh_needed&&r->source_generation&&r->search_started&&
+        !r->source_bound&&!r->fault&&!r->controls.fault&&!r->encounter_started&&
+        !r->original_raw_a_seen&&!r->actual_raw_press_seen&&
+        r->observed.script_final_prompt&&r->observed.scene_epoch==r->source.source_epoch;
+}
 
 void raw_runtime_init(RawRuntime *,uint32_t physical_already_held);
 /* Called on emulator thread at the original BL 1042F0, before HID refresh.

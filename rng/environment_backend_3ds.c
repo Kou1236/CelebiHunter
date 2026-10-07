@@ -17,13 +17,13 @@ static int writable(uint32_t a){MemInfo m;PageInfo p;
         (m.perm&(MEMPERM_READ|MEMPERM_WRITE))==(MEMPERM_READ|MEMPERM_WRITE)&&
         m.base_addr<=a&&(uint64_t)a<(uint64_t)m.base_addr+m.size;}
 static int data(void *u,uint32_t a,uint8_t value){RawEnvironmentBackend3ds *s=u;
-    if(!owned(s)||!raw_environment_data_address(a)||!writable(a))return 0;
+    if(!owned(s)||!raw_environment_data_address(&s->original_read,a)||!writable(a))return 0;
     *(volatile uint8_t *)a=value;return 1;
 }
 static int data_span(void *u,uint32_t a,const uint8_t *values,uint32_t n){
     RawEnvironmentBackend3ds *s=u;MemInfo m;PageInfo p;uint32_t i;
     if(!values||!n||n>256u||(uint64_t)a+n>UINT64_C(0x100000000)||!owned(s))return 0;
-    for(i=0;i<n;i++)if(!raw_environment_data_address(a+i))return 0;
+    if(!raw_environment_data_range(&s->original_read,a,n))return 0;
     /* The byte backend used the same mapping/thread checks once per byte.
        A span cannot cross the single queried RW mapping, and its complete
        typed address range is checked before even the first byte is stored. */

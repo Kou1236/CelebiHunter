@@ -12,7 +12,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-      - name: Run RNG v1.1.0 host tests
+      - name: Run RNG v1.3.0 host tests
         env:
           CC: gcc
         run: python tests/run_rng_tests.py

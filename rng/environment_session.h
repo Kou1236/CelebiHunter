@@ -19,7 +19,7 @@ static inline int raw_environment_session_first_needed(const RawEnvironmentSessi
         !s->cleanup_attempted&&(r->fault||!r->observed.script_final_prompt);
     if(r->encounter_started&&!s->terminal_attempted)return 1;
     return s->state.rtc_owned&&!s->cleanup_attempted&&
-        (r->fault||(!r->encounter_started&&!r->source_bound)||
+        (r->fault||(!r->encounter_started&&!r->source_bound&&!raw_runtime_source_recovery_pending(r))||
          (r->encounter_started&&((r->actual_seen&&r->release_seen)||r->plan_failed)));
 }
 int raw_environment_session_init(RawEnvironmentSession *,const RawEnvironmentOps *);

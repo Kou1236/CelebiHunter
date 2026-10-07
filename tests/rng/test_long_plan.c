@@ -10,6 +10,7 @@ static RawSample actual;
 static RawQueryCache cache;
 static uint32_t physical,checks,terminal_receipts,environment_calls,submissions;
 static uint32_t case_arm,case_terminal_log,case_complete_log;
+static uint32_t restore_status;
 #define CHECK(x) do{checks++;if(!(x)){fprintf(stderr,"failed line %u: %s\n",(unsigned)__LINE__,#x);exit(1);}}while(0)
 
 /* Exact recent-five-event predicate retained by production environment.c.
@@ -49,7 +50,13 @@ int raw_environment_apply(const RawEnvironmentOps *o,RawEnvironmentState *s,cons
     (void)o;CHECK(p->stage==RAW_ENV_TERMINAL);environment_calls++;s->terminal_applied=1u;return RAW_ENV_OK;
 }
 int raw_environment_restore_rtc(const RawEnvironmentOps *o,RawEnvironmentState *s){
-    (void)o;environment_calls++;s->rtc_owned=0u;return RAW_ENV_OK;
+    (void)o;environment_calls++;
+    if(restore_status!=RAW_ENV_OK)return (int)restore_status;
+    s->rtc_owned=0u;return RAW_ENV_OK;
+}
+static int hud_has(const RawHud *h,const char *line){
+    uint32_t n;for(n=0;n<h->count;n++)if(!strcmp(h->line[n],line))return 1;
+    return 0;
 }
 static int sample(void *u,RawSample *s){(void)u;*s=actual;return 1;}
 static int keys(void *u,uint32_t *k){(void)u;*k=physical;return 1;}
@@ -86,6 +93,7 @@ static void unit(uint32_t held){begin_unit(held);finish_unit(held);}
 static void setup(uint32_t origin,int far,uint32_t upper){
     RawServiceOps ops={0};ManualSourceBinding source={0};RawRuntime *r=&service.runtime;
     physical=upper;case_arm=case_terminal_log=case_complete_log=0u;
+    restore_status=RAW_ENV_OK;
     ops.sample=sample;ops.physical_keys=keys;ops.draw=draw;ops.wait_poll=wait_poll;
     ops.submit_copy=submit;ops.receive_copy=receive;ops.first_scheduler=first_scheduler;
     CHECK(raw_service_init(&service,&ops));memset(&environment,0,sizeof(environment));
@@ -179,19 +187,89 @@ static void short_and_pending_guards(void){
     actual.guest_mask=0x00ffu;begin_unit(0u);
     CHECK(!r->plan_pending&&!r->plan_active&&r->plan_failed&&!r->fault);
     CHECK(r->input_plan.error==MP_UNSUPPORTED_SOURCE&&!r->controls.candidate_valid);
-    /* Early physical A cancels a distant forecast; original effective A
-       still reaches the unchanged strict terminal guard on its next scan. */
+    /* Early physical A cancels a distant forecast. The ordinary encounter
+       skips conditional terminal stores and releases the RTC without fault. */
     setup(100u,1,0u);find_candidate(120u);unit(CH_KEY_A);
     CHECK(!r->plan_pending&&!r->plan_active&&r->plan_failed&&!r->fault&&r->actual_raw_press_seen);
-    unit(CH_KEY_A);CHECK(r->encounter_started&&r->fault==RAW_FAULT_ENVIRONMENT);
+    unit(CH_KEY_A);CHECK(r->encounter_started&&!r->fault);
     CHECK(r->encounter_candidate.status==MANUAL_QUERY_INVALID);
+    CHECK(r->encounter_forecast_reason==RAW_ENCOUNTER_FORECAST_OFF_TARGET);
+    CHECK(environment.terminal_attempted&&!environment.state.terminal_applied);
+    CHECK(environment.cleanup_attempted&&!environment.state.rtc_owned);
     /* Non-A GB input expires the pending forecast through actual masks. */
     setup(100u,1,0u);find_candidate(120u);unit(4u);unit(4u);
     CHECK(!r->plan_pending&&!r->plan_active&&r->plan_failed&&!r->fault&&!r->encounter_started);
 }
+static void active_plan_recovery(void){
+    RawRuntime *r=&service.runtime;ManualSourceBinding fresh;uint32_t bad,before_calls;
+    for(bad=0u;bad<3u;bad++){
+        setup(100u,0,0u);find_candidate(1u);
+        while(r->raw_target-actual.counter>RAW_INPUT_PLAN_WINDOW)unit(0u);
+        unit(0u);CHECK(r->plan_active&&r->have_previous_scan);
+        before_calls=environment_calls;
+        if(bad==0u)actual.host_phase=1u;
+        else if(bad==1u)actual.batch=2u;
+        else actual.counter++;
+        begin_unit(0u);
+        CHECK(r->input_plan.error==(bad==2u?MP_COUNTER_MISMATCH:MP_UNSUPPORTED_SOURCE));
+        CHECK(!r->source_bound&&!r->waiting_valid&&!r->controls.active_query.query_id);
+        CHECK(r->refresh_needed&&!r->fault&&raw_runtime_source_recovery_pending(r));
+        finish_unit(0u);
+        CHECK(environment.state.rtc_owned&&!environment.cleanup_attempted);
+        CHECK(environment_calls==before_calls&&!environment.terminal_attempted);
+        actual.host_phase=0u;actual.batch=1u;begin_unit(0u);
+        CHECK(r->refresh_needed&&!r->fault&&raw_runtime_source_recovery_pending(r));
+        /* A fresh checked released origin can restore queries after either MP
+           guard. Native capture is mocked, but binding and admission are real. */
+        fresh=r->source;fresh.origin_counter=actual.counter;
+        memset(fresh.source_identity.bytes,0x62,32);
+        CHECK(raw_runtime_bind_source(r,&fresh,2u));
+        r->waiting=(CQWaitingState){fresh.rng_add,fresh.rng_sub,r->source_bg,{216u,39u,38u,39u,113u}};
+        r->waiting_counter=actual.counter;r->waiting_valid=1u;
+        raw_runtime_poll_player(r,0u,&actual);
+        CHECK(r->controls.active_query.query_id&&r->view.query.query_id);
+        CHECK(!r->refresh_needed&&!r->plan_failed&&!r->fault);
+        CHECK(environment.state.rtc_owned&&!environment.cleanup_attempted);
+    }
+}
+static void unforecast_encounters_and_real_cleanup_failure(void){
+    RawRuntime *r=&service.runtime;RawHud h;uint32_t mode,receipts,calls;
+    for(mode=0u;mode<3u;mode++){
+        setup(100u,mode==0u,0u);
+        if(mode!=2u)find_candidate(mode==0u?120u:1u);
+        if(mode==1u){
+            while(r->raw_target-actual.counter>RAW_INPUT_PLAN_WINDOW)unit(0u);
+        }
+        receipts=terminal_receipts;calls=environment_calls;
+        unit(CH_KEY_A);unit(CH_KEY_A);
+        CHECK(r->encounter_started&&!r->fault&&r->controls.fault==CH_FAULT_NONE);
+        CHECK(r->encounter_candidate.status==MANUAL_QUERY_INVALID&&!r->input_condition_matches);
+        CHECK(terminal_receipts==receipts&&environment_calls==calls+1u);
+        CHECK(environment.terminal_attempted&&!environment.state.terminal_applied);
+        CHECK(environment.cleanup_attempted&&!environment.state.rtc_owned);
+        raw_runtime_hud(r,&h);
+        CHECK(hud_has(&h,mode==2u?"Encounter started without a forecast [R23]":
+            "A pressed outside target Advance [R11]"));
+        CHECK(!hud_has(&h,"Source check failed [R10]"));
+        unit(0u);raw_runtime_actual_dv(r,0x1234u);
+        raw_runtime_hud(r,&h);CHECK(hud_has(&h,"Predicted DV -- | Actual DV 1234"));
+    }
+    /* A cleanup failure after an ordinary early A is a real environment error,
+       even though the off-target reason and an MP mismatch are also recorded. */
+    setup(100u,0,0u);find_candidate(1u);
+    while(r->raw_target-actual.counter>RAW_INPUT_PLAN_WINDOW)unit(0u);
+    restore_status=RAW_ENV_STORE_FAILED;unit(CH_KEY_A);unit(CH_KEY_A);
+    CHECK(r->encounter_started&&r->fault==RAW_FAULT_ENVIRONMENT);
+    CHECK(r->encounter_forecast_reason==RAW_ENCOUNTER_FORECAST_OFF_TARGET);
+    CHECK(r->input_plan.error==MP_INPUT_MISMATCH);
+    CHECK(environment.cleanup_attempted&&environment.state.rtc_owned);
+    raw_runtime_hud(r,&h);CHECK(hud_has(&h,"Source check failed [R10]"));
+    CHECK(!hud_has(&h,"A pressed outside target Advance [R11]"));
+}
 int main(void){
     long_wait(100u,0u);long_wait(0xffffff00u,0u);long_wait(100u,0x8000u);
     short_and_pending_guards();
+    active_plan_recovery();unforecast_encounters_and_real_cleanup_failure();
     printf("passed: %u long-plan assertions, 3 service long waits, current-seed short target, pending guards; memory endpoints mocked\n",checks);
     return 0;
 }
