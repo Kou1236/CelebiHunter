@@ -157,7 +157,8 @@ static void store(uint32_t a,uint32_t v,uint32_t n) {
 }
 static int read_bytes(void *u,uint32_t a,void *out,uint32_t n) {
     uint8_t *p=mapped(a,n);(void)u;
-    if(!p||a==fail_address)return 0;memcpy(out,p,n);
+    if(!p||a==fail_address)return 0;
+    memcpy(out,p,n);
     if(a==0x110000c9u&&n==CH_RESULT_STACK_BYTES) {
         stack_reads++;if(stack_drift&&stack_reads==2)((uint8_t *)out)[0]^=1;
     }
