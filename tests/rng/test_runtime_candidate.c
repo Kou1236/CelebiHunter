@@ -85,7 +85,7 @@ static void hud_dv_fields(const RawHud *h,int predicted_valid,uint32_t predicted
 static void hud_excludes_old_input_failure(const RawHud *h) {
     uint32_t i;
     CHECK(h->count<=7);
-    CHECK(!strcmp(h->line[0],"CelebiHunter v1.3.0"));
+    CHECK(!strcmp(h->line[0],"CelebiHunter v1.4.0"));
     CHECK(!strcmp(h->line[h->count-1],"Start+Up: show/hide HUD"));
     for(i=0;i<h->count;i++){
         CHECK(strlen(h->line[i])<=50u);
@@ -129,7 +129,7 @@ static void test_conditional_original_receipts(void) {
     CHECK(r.actual_dv==0x1234);CHECK(r.encounter_candidate.predicted_dv==original_dv);
     raw_runtime_hud(&r,&h);hud_excludes_old_input_failure(&h);
     hud_dv_fields(&h,1,original_dv,1,0x1234);
-    CHECK(h.count==6u&&!h.line[3][0]);
+    CHECK(h.count==7u&&!h.line[3][0]);
 }
 static void test_missed_and_wrong_input(void) {
     RawSample s=sample(100);RawHud h;uint32_t old_raw;ch_query token;ManualPrediction old;
@@ -180,7 +180,7 @@ static void test_noncanonical_release_hud_keeps_DV_and_certificate_separate(void
         CHECK(r.encounter_started&&r.encounter_candidate.status==MANUAL_QUERY_OK);
         CHECK(r.effective_press==effective&&!r.release_seen);
         raw_runtime_hud(&r,&h);hud_excludes_old_input_failure(&h);
-        CHECK(h.count==6u&&!h.line[3][0]);
+        CHECK(h.count==7u&&!h.line[3][0]);
         hud_dv_fields(&h,1,predicted,0,0);
         CHECK(!r.release_seen&&r.encounter_candidate.expected_release_counter==release);
         if(which)while(s.counter<release+1u)unit(&s,1);
@@ -190,7 +190,7 @@ static void test_noncanonical_release_hud_keeps_DV_and_certificate_separate(void
         CHECK(r.encounter_candidate.status==MANUAL_QUERY_OK&&r.encounter_candidate.predicted_dv==predicted);
         CHECK(!r.input_plan.manual_hardware_verified);
         raw_runtime_hud(&r,&h);hud_excludes_old_input_failure(&h);
-        CHECK(h.count==6u&&!h.line[3][0]);
+        CHECK(h.count==7u&&!h.line[3][0]);
         hud_dv_fields(&h,1,predicted,0,0);
         CHECK(r.encounter_candidate.expected_release_counter==release);
         raw_runtime_actual_dv(&r,(uint16_t)predicted);
@@ -380,7 +380,7 @@ static void test_player_paused_ready_A_resumes_and_observes_release(void) {
     CHECK(!r.input_plan.manual_hardware_verified);
     raw_runtime_actual_dv(&r,(uint16_t)r.encounter_candidate.predicted_dv);
     raw_runtime_hud(&r,&h);hud_excludes_old_input_failure(&h);
-    CHECK(hud_has(&h,"CelebiHunter v1.3.0"));
+    CHECK(hud_has(&h,"CelebiHunter v1.4.0"));
     hud_dv_fields(&h,1,r.encounter_candidate.predicted_dv,1,r.encounter_candidate.predicted_dv);
 }
 static void test_player_leaves_prompt(void) {
@@ -495,15 +495,19 @@ static void test_compact_hud_layout(void){
     RawHud h;uint32_t state,flags;
     raw_runtime_init(&r,0);
     r.controls.overlay_visible=1;r.counter_valid=1;r.counter=2353;
-    r.controls.candidate_valid=1;r.raw_target=2500;r.candidate.predicted_dv=0xfaaa;
+    r.controls.candidate_valid=1;r.raw_target=2500;r.candidate.predicted_dv=0xfaaa;r.waiting_valid=1;
     for(state=CH_RUNTIME_RUNNING;state<=CH_RUNTIME_STEPPING;state++){
         r.runtime=(ch_runtime_state)state;raw_runtime_hud(&r,&h);hud_excludes_old_input_failure(&h);
-        CHECK(h.visible&&h.count==6u&&!h.line[3][0]);
+        CHECK(h.visible&&h.count==7u&&!h.line[3][0]);
         CHECK(hud_has(&h,"Advance 2353 | Target 2500"));
         hud_dv_fields(&h,1,0xfaaa,0,0);
     }
     r.runtime=CH_RUNTIME_PAUSED;r.counter=r.raw_target;
     raw_runtime_hud(&r,&h);CHECK(hud_has(&h,"A starts | L step | R run"));
+    r.waiting_valid=0;r.waiting_recheck=1;raw_runtime_hud(&r,&h);
+    CHECK(hud_has(&h,"Advance 2500 | Target 2500")&&!hud_has(&h,"A starts | L step | R run"));
+    CHECK(!hud_has(&h,"Live state recheck; target held")&&!h.line[3][0]&&h.count==7u);
+    r.waiting_valid=1;r.waiting_recheck=0;
     r.counter=0xfffffffeu;r.raw_target=1u;
     raw_runtime_hud(&r,&h);CHECK(hud_has(&h,"Advance 4294967294 | Target 1"));
     hud_dv_fields(&h,1,0xfaaa,0,0);
@@ -517,7 +521,7 @@ static void test_compact_hud_layout(void){
     for(flags=0;flags<8;flags++){
         r.actual_seen=flags&1u;r.release_seen=(flags>>1)&1u;r.input_condition_matches=(flags>>2)&1u;
         raw_runtime_hud(&r,&h);hud_excludes_old_input_failure(&h);
-        CHECK(h.count==6u&&!h.line[3][0]);
+        CHECK(h.count==7u&&!h.line[3][0]);
         hud_dv_fields(&h,1,0xfaaa,r.actual_seen,0x2aaa);
     }
     r.fault=RAW_FAULT_DISPLAY;raw_runtime_hud(&r,&h);hud_excludes_old_input_failure(&h);
@@ -652,6 +656,100 @@ static void test_refresh_binding_rejects_observed_A_and_departed_prompt(void){
     CHECK(!r.source_bound&&!r.waiting_valid&&!r.controls.candidate_valid&&!r.view.query.query_id);
 }
 
+static void test_original_frontend_menu_is_not_an_unfinished_game_scan(void) {
+    RawSample s;RawHud h;uint32_t mode,gate,n;
+    for(mode=0u;mode<13u;mode++)for(gate=0u;gate<3u;gate++){
+        if(mode==1u&&gate!=2u)continue;
+        s=sample(800);raw_runtime_init(&r,0);raw_runtime_before_scan(&r,&s);poll(&s,0);bind_candidate(&s);
+        raw_runtime_begin_scan(&r,&s);CHECK(r.scan_open);
+        /* The native front-end can leave mode 1 after 110FA0. Its switch
+           skips 10A430, so the next UI visit owns no after-scan receipt. */
+        s.frontend_valid=1u;s.frontend_mode=mode;s.frontend_scan_gate=gate;
+        s.script_final_prompt=0u;
+        for(n=0;n<5u;n++){
+            raw_runtime_before_scan(&r,&s);poll(&s,CH_KEY_L|CH_KEY_R);
+            raw_runtime_begin_scan(&r,&s);
+            CHECK(r.frontend_suspended&&!r.fault&&!r.scan_open&&!r.have_previous_scan);
+            CHECK(r.runtime==CH_RUNTIME_RUNNING&&!r.source_bound&&!r.waiting_valid);
+            CHECK(!r.controls.candidate_valid&&!r.controls.active_query.query_id);
+            CHECK(!r.view.command.kind&&!r.view.query.query_id);
+            CHECK(r.controls.last_counter==800u);
+            raw_runtime_hud(&r,&h);CHECK(!hud_has(&h,"Unexpected game update [R04]"));
+        }
+        /* A normal return from the VC menu keeps its original game counter.
+           It must not synthesize a held L+R chord into a new game pause. */
+        s.frontend_mode=1u;s.frontend_scan_gate=0u;s.script_final_prompt=1u;
+        raw_runtime_before_scan(&r,&s);poll(&s,CH_KEY_L|CH_KEY_R);
+        CHECK(!r.frontend_suspended&&!r.fault&&r.runtime==CH_RUNTIME_RUNNING);
+        CHECK(!r.view.command.kind);poll(&s,0);CHECK(!r.fault);
+        raw_runtime_begin_scan(&r,&s);CHECK(r.scan_open);
+        raw_runtime_after_scan(&r,&s);CHECK(!r.scan_open&&!r.fault);
+    }
+    /* A missing/incoherent menu receipt, unknown mode, or an ordinary game
+       scan never grants permission to discard an unfinished scan. */
+    for(n=0u;n<4u;n++){
+        s=sample(900);raw_runtime_init(&r,0);raw_runtime_before_scan(&r,&s);poll(&s,0);
+        raw_runtime_begin_scan(&r,&s);s.frontend_valid=n!=0u;
+        s.frontend_mode=n==2u?13u:n==3u?1u:8u;
+        if(n==1u)s.sample_complete=0u;
+        raw_runtime_before_scan(&r,&s);CHECK(r.fault==RAW_FAULT_ORDER);
+    }
+    /* Menu entry alone does not authenticate a restart: an unexplained
+       counter reset still reports the original discontinuity on return. */
+    s=sample(950);raw_runtime_init(&r,0);raw_runtime_before_scan(&r,&s);poll(&s,0);
+    s.frontend_valid=1u;s.frontend_mode=8u;s.script_final_prompt=0u;
+    raw_runtime_before_scan(&r,&s);poll(&s,0);s.frontend_mode=1u;s.counter=0u;
+    raw_runtime_before_scan(&r,&s);poll(&s,0);
+    CHECK(r.fault==RAW_FAULT_ORDER&&r.controls.fault==CH_FAULT_COUNTER_DISCONTINUITY);
+}
+
+static void test_checked_restart_retires_only_the_verified_session(void) {
+    RawSample s=sample(600);ManualPrediction stale;ch_query old_query;ManualSourceBinding b;
+    uint32_t request_id,query_id;RawHud h;
+    raw_runtime_init(&r,0);raw_runtime_before_scan(&r,&s);poll(&s,0);bind_candidate(&s);
+    stale=r.candidate;old_query=r.controls.active_query;
+    r.encounter_started=1u;r.actual_seen=1u;r.actual_dv=0xaaaau;
+    r.actual_raw_press_seen=1u;r.actual_raw_press=600u;
+    r.fault=RAW_FAULT_ORDER;r.controls.fault=CH_FAULT_RUNTIME_FAILED;
+    r.controls.overlay_visible=0u;r.controls.interface_locked=1u;
+    request_id=r.controls.next_request_id;query_id=r.controls.next_query_id;
+    CHECK(!raw_runtime_restart_checked(&r,0u,0u));
+    CHECK(!raw_runtime_restart_checked(&r,77u,0u));
+    CHECK(!raw_runtime_restart_checked(&r,76u,0u));
+    CHECK(r.encounter_started&&r.actual_seen&&r.fault==RAW_FAULT_ORDER);
+    /* Device supplies epoch 78 only after its native reset receipt and
+       checked release of environment/result/mailbox ownership. */
+    CHECK(raw_runtime_restart_checked(&r,78u,CH_KEY_L|CH_KEY_R));
+    CHECK(r.scene_epoch==78u&&!r.fault&&!r.controls.fault&&!r.scan_open&&r.restart_bootstrap_pending);
+    CHECK(!r.source_generation&&!r.source_bound&&!r.waiting_valid&&!r.search_started);
+    CHECK(!r.encounter_started&&!r.actual_seen&&!r.actual_raw_press_seen);
+    CHECK(!r.plan_active&&!r.plan_pending&&!r.controls.candidate_valid);
+    CHECK(!r.controls.overlay_visible&&r.controls.interface_locked);
+    CHECK(r.controls.next_request_id==request_id&&r.controls.next_query_id==query_id);
+    CHECK(!raw_runtime_accept_candidate(&r,&old_query,&stale));
+    s=sample(0);s.scene_epoch=78u;s.script_final_prompt=0u;
+    raw_runtime_before_scan(&r,&s);poll(&s,CH_KEY_L|CH_KEY_R);
+    CHECK(!r.fault&&!r.view.command.kind&&r.runtime==CH_RUNTIME_RUNNING);
+    poll(&s,0);CHECK(!r.fault&&!r.search_requested);
+    /* A checked reset retires the old session, but even its zero readback
+       is not a control baseline before a complete ordinary game unit. */
+    raw_runtime_begin_scan(&r,&s);raw_runtime_after_scan(&r,&s);raw_runtime_engine_entry(&r,&s);
+    s.counter=1u;raw_runtime_before_scan(&r,&s);poll(&s,0);CHECK(!r.restart_bootstrap_pending&&!r.fault);
+    s.script_final_prompt=1u;raw_runtime_before_scan(&r,&s);poll(&s,0);
+    CHECK(r.search_started&&r.search_requested&&!r.fault);
+    b=source(1);b.source_epoch=78u;CHECK(bind_test_source(&r,&b,1u));poll(&s,0);
+    CHECK(r.controls.active_query.query_id&&r.controls.active_query.scene_epoch==78u);
+    raw_runtime_hud(&r,&h);CHECK(!hud_has(&h,"Unexpected game update [R04]"));
+    /* Ownership errors and a player-owned pause cannot be cleared using a
+       reset-epoch receipt: their external resources still need resolution. */
+    r.runtime=CH_RUNTIME_PAUSED;CHECK(!raw_runtime_restart_checked(&r,79u,0u));
+    r.runtime=CH_RUNTIME_STEPPING;CHECK(!raw_runtime_restart_checked(&r,79u,0u));
+    r.runtime=CH_RUNTIME_RUNNING;r.display_pending=1u;CHECK(!raw_runtime_restart_checked(&r,79u,0u));
+    r.display_pending=0u;r.display_error=1u;CHECK(!raw_runtime_restart_checked(&r,79u,0u));
+    r.display_error=0u;r.fault=RAW_FAULT_DISPLAY;CHECK(!raw_runtime_restart_checked(&r,79u,0u));
+    r.fault=RAW_FAULT_ENVIRONMENT;CHECK(!raw_runtime_restart_checked(&r,79u,0u));
+}
+
 static void test_actual_waiting_job_guards(void) {
     ManualSourceBinding b=source(100);ManualCurrentBoundary c={0};
     RawJob job,bad;RawQueryCache cache={0};ManualPrediction p;
@@ -695,5 +793,7 @@ int main(void) {
     test_controller_counter_regression_reports_runtime_fault();
     test_transient_source_expiry_requires_new_released_binding();
     test_refresh_binding_rejects_observed_A_and_departed_prompt();
+    test_original_frontend_menu_is_not_an_unfinished_game_scan();
+    test_checked_restart_retires_only_the_verified_session();
     printf("passed: %u assertions, runtime/control scenarios + actual waiting job guards\n",checks);return 0;
 }

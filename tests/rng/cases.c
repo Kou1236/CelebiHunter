@@ -3,7 +3,7 @@
 #define NATIVE_BASE UINT32_C(0x22f5fc)
 #define IO_BASE UINT32_C(0x8a3c07c)
 static uint8_t native[0x458],io[256];
-static uint32_t reads,fail_at,submitted,drawn;
+static uint32_t reads,fail_at,paired_drift_at,submitted,drawn,received;
 static RawJob copied_job;
 static const CQWaitingState canonical={6,234,2,{216,39,38,39,113}};
 int ch_install_startup(ChInstall *s,const ChInstallOps *o,uint32_t p,uint32_t q,const ChInstallPoint *a,uint32_t n){
@@ -16,10 +16,10 @@ static void set32(uint32_t a,uint32_t v){uint32_t i;for(i=0;i<4;i++)native[a-NAT
 static int read_fixture(void *u,uint32_t a,void *out,uint32_t n){const uint8_t *p;(void)u;reads++;if(reads==fail_at)return 0;
     if(a>=NATIVE_BASE&&a-NATIVE_BASE+n<=sizeof(native))p=native+a-NATIVE_BASE;
     else if(a>=IO_BASE&&a-IO_BASE+n<=sizeof(io))p=io+a-IO_BASE;else return 0;
-    memcpy(out,p,n);return 1;
+    memcpy(out,p,n);if(reads==paired_drift_at)((uint8_t *)out)[0]^=1u;return 1;
 }
 static int copied_submit(void *u,const RawJob *job){(void)u;submitted++;copied_job=*job;return 1;}
-static int copied_receive(void *u,RawJob *job,ManualPrediction *p){(void)u;(void)job;(void)p;return 0;}
+static int copied_receive(void *u,RawJob *job,ManualPrediction *p){(void)u;(void)job;(void)p;received++;return 0;}
 static void fixture_draw(void *u,const RawHud *h){(void)u;CHECK(h->count<=12);drawn++;}
 static void forbidden_wait(void *u){(void)u;CHECK(0);}
 static int forbidden_write(void *u,uint32_t a,uint8_t v){(void)u;(void)a;(void)v;CHECK(0);return 0;}
@@ -38,7 +38,7 @@ static void state_at(uint32_t counter,const CQWaitingState *state,uint32_t vblan
 static void reset(void){RawServiceOps ops;ManualSourceBinding binding;RawRuntime *r=&ch_raw_service.runtime;
     memset(&device,0,sizeof(device));memset(native,0,sizeof(native));memset(io,0,sizeof(io));
     memset(&fixture_sample,0,sizeof(fixture_sample));memset(&fixture_prompt,0,sizeof(fixture_prompt));
-    entered=left=restore_calls=reads=fail_at=submitted=drawn=0;
+    entered=left=restore_calls=reads=fail_at=paired_drift_at=submitted=drawn=received=0;
     memset(&ops,0,sizeof(ops));ops.user=&device;ops.sample=sample;ops.physical_keys=keys;
     ops.draw=fixture_draw;ops.wait_poll=forbidden_wait;ops.submit_copy=copied_submit;ops.receive_copy=copied_receive;
     ops.first_scheduler=first;CHECK(raw_service_init(&ch_raw_service,&ops));
@@ -71,7 +71,7 @@ static void candidate_token(void){RawRuntime *r=&ch_raw_service.runtime;
     r->controls.candidate_valid=1;r->controls.target_counter=2900;r->controls.prediction=CH_PREDICTION_FUTURE;
     r->controls.active_query.query_id=99;r->controls.active_query.source_counter=900;
     r->controls.active_query.scene_epoch=77;r->controls.active_query.source_generation=1;
-    r->view.query=r->controls.active_query;r->raw_target=2900;r->plan_active=r->plan_pending=1;
+    r->view.query=r->controls.active_query;r->raw_target=2900;r->plan_active=0;r->plan_pending=1;
 }
 static void route_first(void){ChNativeContext c;memset(&c,0,sizeof(c));c.lr=0x1a8340;
     ch_raw_service.pending_marker=1;CHECK(raw_service_route(&ch_raw_service,&c)==0x1aae60);
@@ -115,10 +115,11 @@ static void mismatch_and_read(void){CQWaitingState next;RawRuntime *r=&ch_raw_se
         CHECK(r->waiting_valid&&!memcmp(&r->waiting,&next,sizeof(next))&&!r->refresh_needed);
         CHECK(device.waiting_diagnostic.stage==RAW_WAIT_DIAG_STATE&&device.waiting_diagnostic.failures==1);}
     reset();candidate_token();next=canonical;CHECK(cq_waiting_next(&next));state_at(901,&next,65,0xffff,0);
-    reads=0;fail_at=7;route_first();invalidated();CHECK(!r->waiting_valid);
+    reads=0;fail_at=7;route_first();safe_waiting();CHECK(!r->waiting_valid&&r->waiting_recheck);
+    CHECK(r->controls.candidate_valid&&r->raw_target==2900&&r->plan_pending);
     CHECK(device.waiting_read_diagnostic.stage==SOURCE_ALIGNED_READ&&device.waiting_read_diagnostic.read_ordinal==7);
-    reset();candidate_token();state_at(901,&next,65,0xffff,0);set32(0x22f6f0,112);route_first();invalidated();
-    CHECK(!r->waiting_valid&&device.waiting_read_diagnostic.domain_guard==7);
+    reset();candidate_token();state_at(901,&next,65,0xffff,0);set32(0x22f6f0,112);route_first();safe_waiting();
+    CHECK(!r->waiting_valid&&r->waiting_recheck&&r->controls.candidate_valid&&device.waiting_read_diagnostic.domain_guard==7);
     reset();route_first();route_first();safe_waiting();CHECK(r->waiting_counter==900&&!memcmp(&r->waiting,&canonical,sizeof(canonical)));
     CHECK(!device.waiting_diagnostic.failures);
 }
@@ -360,11 +361,13 @@ static void waiting_recheck_severity(void){RawRuntime *r=&ch_raw_service.runtime
     for(i=0;i<RAW_WAIT_UNAVAILABLE_ADVANCES;i++){
         CHECK(cq_waiting_next(&next));state_at(901+i,&next,65+i,0xffff,0);
         set32(0x22f6f0,112);route_first();
-        CHECK(!r->fault&&r->source_bound&&!r->waiting_valid&&!r->controls.candidate_valid);
+        CHECK(!r->fault&&r->source_bound&&!r->waiting_valid);
+        CHECK(r->controls.candidate_valid==(i+1u<RAW_WAIT_UNAVAILABLE_ADVANCES));
+        CHECK(r->waiting_recheck==(i+1u<RAW_WAIT_UNAVAILABLE_ADVANCES));
         raw_runtime_hud(r,&h);diagnose_hud(&device,r,&h);
         if(i+1u<RAW_WAIT_UNAVAILABLE_ADVANCES){
-            CHECK(!hud_red_rows(&h)&&diagnostic_contains(&h,"rechecking live state"));
-        }else CHECK(hud_red_rows(&h)&&diagnostic_contains(&h,"Check T07:"));
+            CHECK(!hud_red_rows(&h));
+        }else CHECK(!hud_red_rows(&h)&&!diagnostic_contains(&h,"Check T07:"));
         CHECK(device.source_diagnostic.waiting_alignment.domain_guard==7u);
         CHECK(device.source_diagnostic.waiting_failures==i+1u);
     }
@@ -443,8 +446,162 @@ static void readonly_retry_budgets(void){RawRuntime *r=&ch_raw_service.runtime;
     }
     backend_ok=read_ok=post_read_ok=1;
 }
+static void real_waiting_job(RawJob *job,ManualPrediction *prediction){
+    RawRuntime *r=&ch_raw_service.runtime;RawQueryCache cache;
+    raw_runtime_poll_player(r,0,&r->observed);CHECK(r->view.query.query_id);
+    memset(job,0,sizeof(*job));job->token=r->view.query;job->source=r->source;
+    job->boundary.counter=r->counter;job->boundary.source_epoch=r->source.source_epoch;
+    job->boundary.source_identity=r->source.source_identity;
+    job->boundary.required_context_identity=r->source.required_context_identity;
+    job->waiting=r->waiting;job->waiting_counter=r->waiting_counter;job->waiting_valid=1;
+    job->minimum_player_lead=RAW_MINIMUM_PLAYER_LEAD;job->source_bg=r->source_bg;
+    memset(&cache,0,sizeof(cache));CHECK(raw_job_solve_cached(job,0,&cache,prediction)==MANUAL_QUERY_OK);
+    memset(&r->view.query,0,sizeof(r->view.query));
+}
+static void near_real_target(CQWaitingState *state){
+    RawRuntime *r=&ch_raw_service.runtime;RawJob job;ManualPrediction prediction;uint32_t counter;
+    reset();real_waiting_job(&job,&prediction);CHECK(raw_query_complete(r,&job,&prediction)==RAW_QUERY_ACCEPTED);
+    *state=canonical;CHECK(r->plan_pending&&!r->plan_active);
+    while(r->raw_target-r->counter>RAW_INPUT_PLAN_WINDOW){
+        counter=r->counter+1u;CHECK(cq_waiting_next(state));
+        state_at(counter,state,(64u+counter-900u)&255u,0xffff,0);route_first();
+        raw_runtime_poll_player(r,0,&r->observed);CHECK(r->controls.candidate_valid&&!r->fault);
+    }
+    raw_runtime_before_scan(r,&r->observed);CHECK(r->plan_active&&!r->plan_pending&&!r->fault);
+    raw_runtime_begin_scan(r,&r->observed);raw_runtime_after_scan(r,&r->observed);
+    raw_runtime_engine_entry(r,&r->observed);route_first();
+}
+static void actual_released_unit(CQWaitingState *state,uint32_t fail){
+    RawRuntime *r=&ch_raw_service.runtime;uint32_t before=r->counter;
+    CHECK(cq_waiting_next(state));state_at(before+1u,state,(65u+before-900u)&255u,0xffff,0);
+    r->counter=before;raw_runtime_before_scan(r,&r->observed);raw_runtime_poll_player(r,0,&r->observed);
+    CHECK(!r->fault&&r->controls.candidate_valid);
+    raw_runtime_begin_scan(r,&r->observed);raw_runtime_after_scan(r,&r->observed);
+    raw_runtime_engine_entry(r,&r->observed);reads=0;
+    fail_at=fail==UINT32_MAX?0:fail;paired_drift_at=fail==UINT32_MAX?26u:0;
+    route_first();fail_at=paired_drift_at=0;
+}
+static void waiting_target_recovery(void){
+    RawRuntime *r=&ch_raw_service.runtime;CQWaitingState state;ManualPrediction immutable;
+    uint32_t target,anchor,log_count,i;RawHud h;
+    near_real_target(&state);target=r->raw_target;anchor=r->waiting_counter;
+    immutable=r->candidate;log_count=r->input_plan.log_count;
+    for(i=0;i<3u;i++){
+        actual_released_unit(&state,i==1u?UINT32_MAX:7u);CHECK(r->waiting_recheck&&!r->waiting_valid);
+        CHECK(device.waiting_read_diagnostic.stage==(i==1u?SOURCE_ALIGNED_DRIFT:SOURCE_ALIGNED_READ));
+        CHECK(r->waiting_counter==anchor&&r->raw_target==target&&r->controls.candidate_valid);
+        CHECK(!memcmp(&r->candidate,&immutable,sizeof(immutable))&&r->plan_active&&!r->plan_failed);
+        CHECK(r->input_plan.current_counter==r->counter&&r->input_plan.log_count>log_count);
+        raw_runtime_poll_player(r,0,&r->observed);CHECK(r->controls.candidate_valid&&!r->view.query.query_id);
+        raw_runtime_hud(r,&h);CHECK(!diagnostic_contains(&h,"Live state recheck; target held")&&!h.line[3][0]);
+        log_count=r->input_plan.log_count;
+        /* Same actual boundary cannot consume the remaining recovery budget. */
+        reads=0;fail_at=7;route_first();fail_at=0;
+        CHECK(device.waiting_diagnostic.failures==i+1u&&r->controls.candidate_valid);
+    }
+    actual_released_unit(&state,0);CHECK(r->waiting_valid&&!r->waiting_recheck);
+    CHECK(r->raw_target==target&&r->raw_target-r->counter<RAW_MINIMUM_PLAYER_LEAD);
+    CHECK(r->controls.candidate_valid&&r->plan_active&&!memcmp(&r->candidate,&immutable,sizeof(immutable)));
+    CHECK(!device.source_diagnostic.waiting_unavailable_failures&&!r->view.query.query_id);
+    safe_waiting();
+}
+static void waiting_recovery_drift(void){
+    RawRuntime *r=&ch_raw_service.runtime;CQWaitingState state;uint32_t kind,counter;
+    for(kind=0;kind<7u;kind++){
+        reset();candidate_token();state=canonical;CHECK(cq_waiting_next(&state));state_at(901,&state,65,0xffff,0);
+        reads=0;fail_at=7;route_first();fail_at=0;CHECK(r->waiting_recheck);
+        CHECK(cq_waiting_next(&state));counter=902;
+        if(kind==0)state.a^=1u;else if(kind==1)state.s^=1u;else if(kind==2)state.clock.div^=1u;
+        else if(kind==3)state.bg=(state.bg+1u)%3u;
+        else if(kind==4){state.clock.timer_phase++;state.clock.budget=state.clock.div_countdown<state.clock.timer_phase+1u?
+            state.clock.div_countdown:state.clock.timer_phase+1u;}
+        else if(kind==5){state.clock.div_countdown++;state.clock.budget=state.clock.div_countdown<state.clock.timer_phase+1u?
+            state.clock.div_countdown:state.clock.timer_phase+1u;}
+        state_at(counter,&state,kind==6?67u:66u,0xffff,0);route_first();invalidated();
+        CHECK(!r->waiting_recheck);
+    }
+    reset();candidate_token();state=canonical;CHECK(cq_waiting_next(&state));state_at(901,&state,65,0xffff,0);
+    reads=0;fail_at=7;route_first();fail_at=0;
+    CHECK(cq_waiting_next(&state));state_at(902,&state,66,0xffff,0);fixture_prompt.map_number=51;
+    CHECK(raw_platform_sample(&device.binding,&r->observed));route_first();invalidated();
+    CHECK(device.waiting_diagnostic.stage==RAW_WAIT_DIAG_INFER);
+}
+static void waiting_result_deferral(void){
+    RawRuntime *r=&ch_raw_service.runtime;RawJob job,out;ManualPrediction prediction,returned;CQWaitingState state=canonical;
+    ChNativeContext gate;
+    reset();real_waiting_job(&job,&prediction);CHECK(raw_mailbox_submit(&device.mailbox,&job));
+    CHECK(raw_mailbox_take(&device.mailbox,&out));CHECK(raw_mailbox_finish(&device.mailbox,&out,&prediction));
+    CHECK(cq_waiting_next(&state));state_at(901,&state,65,0xffff,0);reads=0;fail_at=7;route_first();fail_at=0;
+    CHECK(r->waiting_recheck&&raw_query_complete(r,&job,&prediction)==RAW_QUERY_DEFERRED);
+    CHECK(!receive(&device,&out,&returned)&&device.mailbox.ready_valid);
+    CHECK(r->controls.active_query.query_id==job.token.query_id&&r->query_status==MANUAL_QUERY_OK);
+    memset(&gate,0,sizeof(gate));gate.lr=0x1042f4u;
+    CHECK(raw_service_route(&ch_raw_service,&gate)==0x110fa0u);
+    CHECK(!received&&device.mailbox.ready_valid&&r->controls.active_query.query_id==job.token.query_id);
+    raw_runtime_after_scan(r,&r->observed);raw_runtime_engine_entry(r,&r->observed);
+    CHECK(cq_waiting_next(&state));state_at(902,&state,66,0xffff,0);route_first();
+    CHECK(r->waiting_valid&&!r->waiting_recheck&&receive(&device,&out,&returned));
+    CHECK(!memcmp(&job,&out,sizeof(job))&&!memcmp(&prediction,&returned,sizeof(prediction)));
+    raw_runtime_poll_player(r,0,&r->observed);CHECK(raw_query_complete(r,&out,&returned)==RAW_QUERY_ACCEPTED);
+}
+static void waiting_original_a_rejected(void){
+    RawRuntime *r=&ch_raw_service.runtime;CQWaitingState state;uint32_t target,counter;
+    near_real_target(&state);target=r->raw_target;
+    while(target-r->counter>2u)actual_released_unit(&state,0);
+    actual_released_unit(&state,7);CHECK(r->waiting_recheck&&r->counter+1u==target);
+    /* Still pass an actual physical A to the original scan while isolated. */
+    counter=r->counter+1u;CHECK(cq_waiting_next(&state));state_at(counter,&state,(64u+counter-900u)&255u,0xffff,0);
+    r->counter=counter-1u;raw_runtime_before_scan(r,&r->observed);raw_runtime_poll_player(r,0,&r->observed);
+    raw_runtime_begin_scan(r,&r->observed);r->observed.host_held=1;raw_runtime_after_scan(r,&r->observed);
+    CHECK(r->actual_raw_press_seen&&r->original_raw_a_seen&&!r->controls.candidate_valid&&!r->plan_active);
+    raw_runtime_engine_entry(r,&r->observed);
+    CHECK(!r->encounter_started&&r->observed.guest_mask==0xffffu);
+    route_first();CHECK(r->waiting_valid&&!r->waiting_recheck&&!r->controls.candidate_valid&&r->plan_failed);
+    CHECK(cq_waiting_next(&state));state_at(target+1u,&state,(65u+target-900u)&255u,0xffff,1);
+    r->counter=target;raw_runtime_before_scan(r,&r->observed);
+    raw_runtime_begin_scan(r,&r->observed);raw_runtime_after_scan(r,&r->observed);
+    r->observed.guest_mask=0xfffe;
+    raw_runtime_engine_entry(r,&r->observed);
+    CHECK(r->encounter_started&&r->encounter_candidate.status!=MANUAL_QUERY_OK&&!r->input_condition_matches);
+    CHECK(r->runtime==CH_RUNTIME_RUNNING&&!r->fault);
+}
+static void transient_diagnostic_publication(void){RawRuntime *r=&ch_raw_service.runtime;
+    RawHud h;uint32_t i,base;RawDeviceSourceDiagnostic retained;
+    reset();r->controls.overlay_visible=1;r->waiting_valid=0;
+    device.waiting_diagnostic.failures=1;device.waiting_diagnostic.stage=RAW_WAIT_DIAG_ALIGNMENT;
+    device.waiting_diagnostic.aligned.stage=SOURCE_ALIGNED_DOMAIN;
+    device.waiting_diagnostic.aligned.domain_guard=7;
+    device.source_diagnostic.waiting_unavailable_failures=4;
+    /* The formerly red fourth failure is not a runtime fault. Full code
+       formatting remains testable above; live publication waits for a stable
+       cause instead of displaying it for the sole rejected game frame. */
+    for(i=0;i<59u;i++){
+        raw_runtime_hud(r,&h);base=h.count;diagnose_hud(&device,r,&h);
+        CHECK(h.count==base&&!hud_red_rows(&h)&&!diagnostic_contains(&h,"Check T07:"));
+        CHECK(!h.line[4][0]&&!strcmp(h.line[5],"L+R: pause"));
+    }
+    raw_runtime_hud(r,&h);diagnose_hud(&device,r,&h);
+    CHECK(diagnostic_contains(&h,"Check T07:")&&!hud_red_rows(&h));
+    /* Successful readback immediately retires the delayed warning. No HUD
+       debounce can grant source/forecast validity. */
+    r->waiting_valid=1;raw_runtime_hud(r,&h);base=h.count;diagnose_hud(&device,r,&h);
+    CHECK(h.count==base&&!device.diagnostic_ticks);
+    r->waiting_valid=0;raw_runtime_hud(r,&h);diagnose_hud(&device,r,&h);
+    CHECK(!diagnostic_contains(&h,"Check T07:")&&device.diagnostic_ticks==1u);
+    device.worker=(Thread)(uintptr_t)1;
+    device.source_diagnostic.waiting_guard=7u;
+    CHECK(raw_device_source_diagnostic_copy(&retained)&&retained.waiting_guard==7u);
+    /* Stopped acquisition failures and runtime errors bypass presentation
+       smoothing, retaining immediate red report codes. */
+    r->source_bound=0;device.source_diagnostic.closed=1;
+    device.source_diagnostic.phase=RAW_SOURCE_STOP_STORE;
+    raw_runtime_hud(r,&h);diagnose_hud(&device,r,&h);
+    CHECK(diagnostic_contains(&h,"Check S11/")&&hud_red_rows(&h));
+    CHECK(!h.line[4][0]&&!strcmp(h.line[5],"L+R: pause"));
+}
 int main(void){upper_select_release_query();mismatch_and_read();fresh_and_A_strict();compatibility_save_inputs();compatibility_environment_layout();
     source_diagnostic_hud();waiting_diagnostic_codes();fresh_diagnostic_retention();
     recovery_diagnostics();
-    waiting_recheck_severity();readonly_retry_budgets();
+    waiting_recheck_severity();transient_diagnostic_publication();readonly_retry_budgets();
+    waiting_target_recovery();waiting_recovery_drift();waiting_result_deferral();waiting_original_a_rejected();
     printf("passed: %u checks; runtime paths, dynamic mappings, live CPU fields, all valid StartTime tuples, and invalid save-time guards\n",checks);return 0;}

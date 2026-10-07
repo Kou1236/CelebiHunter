@@ -11,7 +11,10 @@ extern "C" {
 #define CH_MARKER_SITE UINT32_C(0x001a82dc)
 #define CH_SOURCE_SITE UINT32_C(0x001a833c)
 #define CH_PRESENT_SITE UINT32_C(0x0014547c)
-#define CH_MAX_INSTALL_POINTS 5u
+/* Interruption Load and the confirmed Menu Reset counter-clear boundary. */
+#define CH_RESTART_RECEIPT_SITE UINT32_C(0x0010ed5c)
+#define CH_MENU_RESET_RECEIPT_SITE UINT32_C(0x001858e4)
+#define CH_MAX_INSTALL_POINTS 7u
 #define CH_ALIAS_PAGE_SIZE 4096u
 #define CH_PRISTINE_PREFIX_SIZE UINT32_C(0x12b000)
 #define CH_ENGINE_POINTER_ADDRESS UINT32_C(0x0022f698)
@@ -79,7 +82,7 @@ enum { CH_INSTALL_OK=1, CH_INSTALL_REJECTED=0, CH_INSTALL_POISONED=-1 };
 
 int ch_encode_bl(uint32_t site, uint32_t target, uint32_t *word);
 /* Startup only, before the original native thread starts. No live uninstall.
-   Five allowed sites are fixed above, each must be its pristine original BL.
+   Six allowed sites are fixed above, each must be its pristine original BL.
    Raw pre-scan is required; all other observer points are caller-selected.
    No provider filter/lease or RNG/DV/environment mutation is permitted. */
 int ch_install_startup(ChInstall *, const ChInstallOps *, uint32_t source_page,

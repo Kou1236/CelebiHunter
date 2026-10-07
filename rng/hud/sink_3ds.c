@@ -24,7 +24,8 @@ int raw_hud_3ds_sink_init(RawHud3dsSink *s,uint32_t screen_id,const RawHudLayout
     if(!s||screen_id>1)return 0;
     if(layout)l=*layout;
     if(l.columns<1||l.columns>RAW_HUD_COLUMNS||l.x< -1024||l.x>1024||l.y< -1024||l.y>1024)return 0;
-    memset(s,0,sizeof(*s));LightLock_Init(&s->lock);s->screen_id=screen_id;s->layout=l;s->initialized=1;return 1;
+    memset(s,0,sizeof(*s));LightLock_Init(&s->lock);LightLock_Init(&s->background_lock);
+    s->screen_id=screen_id;s->layout=l;s->initialized=1;return 1;
 }
 void raw_hud_3ds_publish(void *u,const RawHud *h){RawHud3dsSink *s=u;
     if(!s||!s->initialized||!h)return;
@@ -35,22 +36,28 @@ static int original_present(RawHud3dsSink *s,uint32_t screen_id,uint32_t swap,
     uint32_t width=screen_id==0?400u:320u;
     if(!s||!s->initialized||screen_id>1)return RAW_HUD_SINK_ERROR;
     if(screen_id!=s->screen_id)return RAW_HUD_SINK_SKIPPED;
-    /* The original owner serializes present and pause capture. Invalidate
-       first, including on malformed or contended calls, so no older glyph
+    /* Publication only copies a small value. Wait for that snapshot rather
+       than dropping the HUD from a fresh game frame during a target update.
+       Release it before taking the independent pixel-receipt lock. */
+    if(h){LightLock_Lock(&s->lock);*h=s->published;LightLock_Unlock(&s->lock);}
+    LightLock_Lock(&s->background_lock);
+    /* The pixel-receipt lock excludes pause-clone restoration. Invalidate
+       first, including on malformed calls, so no older glyph
        receipt can be mistaken for this new game image. */
     s->background_valid=0;s->background_unpainted=0;s->presentation_sequence++;
     if(swap>1||!fb_a||!raw_hud_surface_span(width,240,stride,format,&span)||
        span>UINT32_MAX-(uint32_t)(uintptr_t)fb_a||
-       (screen_id==0&&fb_b&&span>UINT32_MAX-(uint32_t)(uintptr_t)fb_b))return RAW_HUD_SINK_ERROR;
-    if(LightLock_TryLock(&s->lock))return RAW_HUD_SINK_SKIPPED;
+       (screen_id==0&&fb_b&&span>UINT32_MAX-(uint32_t)(uintptr_t)fb_b)){
+        LightLock_Unlock(&s->background_lock);return RAW_HUD_SINK_ERROR;
+    }
     if(screen_id==0){
         s->background_a=(uint32_t)(uintptr_t)fb_a;s->background_b=(uint32_t)(uintptr_t)fb_b;
         s->background_stride=stride;s->background_format=format;
         s->background_sequence=s->presentation_sequence;s->background_saved_pixels=0;
         s->background_unpainted=1;s->background_valid=1;
     }
-    if(h)*h=s->published;
-    LightLock_Unlock(&s->lock);return 1;
+    LightLock_Unlock(&s->background_lock);
+    return 1;
 }
 int raw_hud_3ds_original_unpainted_present(RawHud3dsSink *s,uint32_t screen_id,uint32_t swap,
     uint8_t *fb_a,uint8_t *fb_b,uint32_t stride,uint32_t format){
@@ -75,7 +82,7 @@ static int writable(uint8_t *p,size_t bytes,uint8_t **draw,int *uncached){
 int raw_hud_3ds_restore_background(void *user,uint32_t a,uint32_t b,uint32_t stride,uint32_t format,
     uint8_t *clone,uint32_t bytes){RawHud3dsSink *s=user;size_t span;uint32_t x,y,index,bpp;int ok=-1;
     if(!s||!s->initialized||!clone||!raw_hud_surface_span(400,240,stride,format,&span)||span!=bytes)return 0;
-    if(LightLock_TryLock(&s->lock))return 0;
+    LightLock_Lock(&s->background_lock);
     if(s->background_valid&&s->background_sequence==s->presentation_sequence&&s->background_a==a&&s->background_b==b&&
        s->background_stride==stride&&s->background_format==format){
         if(!s->background_unpainted){
@@ -89,7 +96,7 @@ int raw_hud_3ds_restore_background(void *user,uint32_t a,uint32_t b,uint32_t str
         }
         ok=1;
     }
-    LightLock_Unlock(&s->lock);return ok;
+    LightLock_Unlock(&s->background_lock);return ok;
 }
 int raw_hud_3ds_present(RawHud3dsSink *s,uint32_t screen_id,uint32_t swap,
     uint8_t *fb_a,uint8_t *fb_b,uint32_t stride,uint32_t format){
@@ -112,7 +119,7 @@ int raw_hud_3ds_present(RawHud3dsSink *s,uint32_t screen_id,uint32_t swap,
     for(i=0;i<n;i++){
         if(i==0&&screen_id==0){RawHudCapture capture={s->background,s->background_mask,
             sizeof(s->background),sizeof(s->background_mask),0,0,0,0,0};
-            if(LightLock_TryLock(&s->lock))return RAW_HUD_SINK_SKIPPED;
+            LightLock_Lock(&s->background_lock);
             result=raw_hud_paint_capture(&h,&surfaces[i],&s->layout,&paint[i],&capture);
             if(result==RAW_HUD_PAINTED){
                 s->background_a=(uint32_t)(uintptr_t)fb_a;s->background_b=(uint32_t)(uintptr_t)fb_b;
@@ -123,7 +130,7 @@ int raw_hud_3ds_present(RawHud3dsSink *s,uint32_t screen_id,uint32_t swap,
                 s->background_saved_pixels=capture.saved_pixels;
                 s->background_sequence=s->presentation_sequence;s->background_unpainted=0;s->background_valid=1;
             }
-            LightLock_Unlock(&s->lock);
+            LightLock_Unlock(&s->background_lock);
         }else result=raw_hud_paint_transparent(&h,&surfaces[i],&s->layout,&paint[i]);
         if(result==RAW_HUD_INVALID)return RAW_HUD_SINK_ERROR;
         if(result==RAW_HUD_PAINTED&&uncached[i])__dsb();

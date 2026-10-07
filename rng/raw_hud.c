@@ -66,7 +66,7 @@ static void controls(const RawRuntime *r,RawHud *h,uint32_t color,int ready){
     row(h,color,"");
     row(h,color,r->runtime==CH_RUNTIME_PAUSED?
         (ready?"A starts | L step | R run":"L step | R run"):
-        r->runtime==CH_RUNTIME_STEPPING?"Advancing one step":"L+R: pause");
+        r->runtime==CH_RUNTIME_STEPPING?"L step | R run":"L+R: pause");
     row(h,color,"Start+Up: show/hide HUD");
 }
 void raw_runtime_hud(const RawRuntime *r,RawHud *h) {
@@ -76,7 +76,7 @@ void raw_runtime_hud(const RawRuntime *r,RawHud *h) {
     int forecast=r->encounter_started?r->encounter_candidate.status==MANUAL_QUERY_OK:target;
     char *p;
     memset(h,0,sizeof(*h));h->visible=r->controls.overlay_visible;
-    row(h,white,"CelebiHunter v1.3.0");
+    row(h,white,"CelebiHunter v1.4.0");
     p=row(h,white,"Advance ");
     if(r->counter_valid)p=number(p,r->counter);else p=text(p,"--");
     p=text(p," | Target ");
@@ -99,5 +99,8 @@ void raw_runtime_hud(const RawRuntime *r,RawHud *h) {
             "A pressed outside target Advance [R11]":"Encounter started without a forecast [R23]");
     else if(!forecast&&!target&&r->query_status!=MANUAL_QUERY_OK)
         row(h,yellow,query_text(r));
-    controls(r,h,white,!r->encounter_started&&target&&distance==0u);
+    else row(h,white,"");
+    /* Reserve the status row even when empty. Transient rechecks stay in
+       the copied diagnostic, and controls never move up/down between frames. */
+    controls(r,h,white,!r->encounter_started&&target&&r->waiting_valid&&distance==0u);
 }

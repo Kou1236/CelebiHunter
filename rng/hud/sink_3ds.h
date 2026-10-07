@@ -5,7 +5,10 @@
 #define RAW_HUD_UNDERLAY_BYTES ((2u*RAW_HUD_PADDING+RAW_HUD_COLUMNS*RAW_HUD_GLYPH_PITCH)*(2u*RAW_HUD_PADDING+RAW_HUD_ROWS*RAW_HUD_ROW_PITCH)*3u)
 #define RAW_HUD_UNDERLAY_MASK_BYTES ((RAW_HUD_UNDERLAY_BYTES/3u+7u)/8u)
 typedef struct {
+    /* Publisher copies and native pixel receipts use separate locks. No
+       publisher touches pixels or holds a lock while drawing. */
     LightLock lock;
+    LightLock background_lock;
     RawHud published;
     RawHudLayout layout;
     uint32_t initialized,screen_id;
@@ -37,6 +40,7 @@ int raw_hud_3ds_original_unpainted_present(RawHud3dsSink *,uint32_t screen_id,ui
     uint8_t *fb_a,uint8_t *fb_b,uint32_t stride,uint32_t format);
 /* Restore only the copied HUD rectangle into an owned pause-image clone.
    An exact unpainted receipt leaves the clone unchanged. Never writes a game
-   framebuffer; requires the current generation's exact surface identity. */
+   framebuffer; requires the current generation's exact surface identity.
+   Uses the pixel-receipt lock independently of HUD publication. */
 int raw_hud_3ds_restore_background(void *,uint32_t,uint32_t,uint32_t,uint32_t,uint8_t *,uint32_t);
 #endif

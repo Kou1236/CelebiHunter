@@ -16,4 +16,7 @@ void ch_3ds_startup_finished(Ch3dsBackend *);
    begin does not bypass mapping validation: ordinary reads still query it. */
 int ch_3ds_read_begin(Ch3dsBackend *);
 void ch_3ds_read_end(Ch3dsBackend *);
+/* A native worker must not share the main thread's mutable mapping cache.
+   Copy only completed startup identity into caller-owned read-only storage. */
+int ch_3ds_worker_read_ops(const Ch3dsBackend *,Ch3dsBackend *,ChReadOps *);
 #endif

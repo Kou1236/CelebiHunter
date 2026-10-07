@@ -2,26 +2,27 @@
 
 ## Hardware check
 
-Test the exact `Reset.3gx` and `RNG.3gx` files that will be uploaded.
+Test the release build, or verify that its loaded code matches the tested build with only the HUD version changed.
 
-- Reset: complete one full non-shiny reset cycle, then confirm `B` stops the automation.
-- RNG: complete the shrine sequence manually and confirm a shiny `FAAA` Celebi.
-- Restart the game once with each version installed.
+- Keep the original v1.0.0 `Reset.3gx` for releases without Reset changes. If rebuilding Reset, test one non-shiny cycle and confirm `B` stops it.
+- RNG: check manual pause, L steps, resume, Target refresh, and the final encounter's DVs against the forecast.
+- Use Restart in the VC touch-screen menu and confirm RNG recovers without R04/R08.
+- Run the host tests and wait for GitHub Actions to pass before publishing.
 
 ## Package
 
 ```text
-python tools/build.py
+python tools/build.py --rng
 python tools/package_release.py
 ```
 
 ## GitHub release
 
-1. Create the tag and release title `v1.0.0`.
-2. Use the `v1.0.0` section of `CHANGELOG.md` as the release notes.
+1. Create the matching version tag and release title, currently `v1.4.0`.
+2. Use that version's section of `CHANGELOG.md` as the release notes.
 3. Upload:
    - `Reset.3gx`
    - `RNG.3gx`
    - `SHA256SUMS.txt`
-   - `CelebiHunter-v1.0.0.zip`
-4. Publish as a pre-release until the planned hardware tests are complete.
+   - `CelebiHunter-v1.4.0.zip`
+4. Verify each uploaded asset's SHA-256 against the local package. Leave an unverified build as a draft.

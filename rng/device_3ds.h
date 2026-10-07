@@ -21,7 +21,7 @@ typedef struct {
     uint32_t magic,version,phase,caller_status;
     int32_t install_status;
     uint32_t source_page,alias_page,point_count,attempted_count,alias_mapped,poisoned;
-    uint32_t sites[5],original_words[5],installed_words[5],current_words[5],readable_bits;
+    uint32_t sites[CH_MAX_INSTALL_POINTS],original_words[CH_MAX_INSTALL_POINTS],installed_words[CH_MAX_INSTALL_POINTS],current_words[CH_MAX_INSTALL_POINTS],readable_bits;
 } RawDeviceStartupDiagnostic;
 void raw_device_startup_diagnostic(RawDeviceStartupDiagnostic *,int32_t status);
 int raw_device_hud_copy(RawHud *);

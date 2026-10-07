@@ -41,7 +41,7 @@ If you just want shiny Celebi and do not need to follow the RNG timing, [RNG v1.
 - Ilex Forest Shrine GS Ball Celebi event
 - Luma3DS with Plugin Loader enabled
 - Reset v1.0.0: Old 3DS, Old 2DS, New 3DS, New 2DS, and 268/804 MHz modes
-- RNG v1.2.0: tested on New 3DS at 268 MHz with Luma3DS 13.4
+- RNG v1.4.0: tested on New 3DS at 268 MHz with Luma3DS 13.4
 
 Primary test environment: New 3DS, 268 MHz, Luma3DS 13.4. Other console models, CPU modes, and Luma3DS versions have not been tested with the RNG build. Reports are welcome through GitHub Issues.
 

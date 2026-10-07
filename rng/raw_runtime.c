@@ -1,13 +1,18 @@
 #include "raw_runtime.h"
 #include <string.h>
 static void fault(RawRuntime *,uint32_t);
+static int frontend_without_game_scan(const RawSample *s) {
+    return s->frontend_valid&&s->sample_complete&&s->counter_read&&
+        s->frontend_mode<13u&&(s->frontend_mode!=1u||s->frontend_scan_gate==2u);
+}
 static int ordinary(const RawSample *s) {
     return s->counter_read&&s->sample_complete&&s->ordinary_supported&&s->batch==1u&&
-        s->host_phase==0u&&s->input_type==1u&&s->input_enable==0u;
+        s->host_phase==0u&&s->input_type==1u&&s->input_enable==0u&&
+        (!s->frontend_valid||(s->frontend_mode==1u&&s->frontend_scan_gate!=2u));
 }
 static void invalidate_source(RawRuntime *r) {
     if(r->source_bound)r->refresh_needed=1;
-    r->source_bound=0;r->waiting_valid=0;r->plan_active=0;r->plan_pending=0;
+    r->source_bound=0;r->waiting_valid=0;r->waiting_recheck=0;r->plan_active=0;r->plan_pending=0;
     ch_controller_request_query(&r->controls);
 }
 static MpSourceConditions plan_sample(const RawRuntime *r,const RawSample *s) {
@@ -69,8 +74,39 @@ static void log_event(RawRuntime *r,uint32_t kind,const RawSample *s) {
 void raw_runtime_init(RawRuntime *r,uint32_t held) {
     memset(r,0,sizeof(*r));ch_controller_init(&r->controls,held);r->runtime=CH_RUNTIME_RUNNING;r->source_bg=UINT32_MAX;
 }
+int raw_runtime_restart_checked(RawRuntime *r,uint64_t epoch,uint32_t held) {
+    uint32_t visible,locked,next_request,next_query;
+    if(!raw_runtime_restart_eligible(r,epoch))return 0;
+    visible=r->controls.overlay_visible;locked=r->controls.interface_locked;
+    next_request=r->controls.next_request_id;next_query=r->controls.next_query_id;
+    raw_runtime_init(r,held);r->scene_epoch=epoch;r->restart_bootstrap_pending=1u;
+    r->controls.overlay_visible=(uint8_t)visible;r->controls.interface_locked=(uint8_t)locked;
+    r->controls.next_request_id=next_request;r->controls.next_query_id=next_query;
+    return 1;
+}
 void raw_runtime_before_scan(RawRuntime *r,const RawSample *s) {
     uint32_t delta=s->counter-r->counter;
+    if(frontend_without_game_scan(s)) {
+        /* 1042F0 is also visited by the original VC menu. Its switch at
+           1042FC legitimately omits the 104374 scan in these read-back modes.
+           Retire only that unfinished scan, never a counter/reset fault. */
+        invalidate_source(r);r->frontend_suspended=1;r->at_gate=0;
+        r->counter_valid=0;r->unit_supported=0;r->scan_open=0;
+        r->have_previous_scan=0;r->engine_entries=0;r->previous_unit_supported=0;
+        r->latest=*s;r->observed=*s;
+        if(r->runtime==CH_RUNTIME_STEPPING){r->runtime=CH_RUNTIME_PAUSED;fault(r,RAW_FAULT_UNIT);}
+        return;
+    }
+    r->frontend_suspended=0;
+    if(r->restart_bootstrap_pending&&!r->fault&&!r->controls.fault&&
+       s->scene_epoch==r->scene_epoch&&!r->scan_open&&r->have_previous_scan&&
+       r->previous_unit_supported&&r->restart_bootstrap_unit_supported&&ordinary(s)&&
+       r->engine_entries==1u&&delta==1u){
+        /* Reset has completed, but a loading visit is not yet a comparable
+           game advance. Lock the baseline only after the first actual scan,
+           its original engine entry and the next checked +1 game boundary. */
+        r->restart_bootstrap_pending=0u;r->controls.counter_valid=0u;
+    }
     if(r->plan_active&&r->have_previous_scan) {
         MpSourceConditions a=plan_sample(r,s);
         if(mp_plan_observe_counter(&r->input_plan,&a,r->scan_before_counter)!=MP_OK)
@@ -106,7 +142,7 @@ void raw_runtime_before_scan(RawRuntime *r,const RawSample *s) {
     /* The A which reaches this text belongs to the original game. Arm only
        after the final wait is observed with actual input released; no extra
        search button, synthetic key or gameplay command is involved. */
-    if(!r->search_started&&!r->encounter_started&&!r->fault&&r->counter_valid&&
+    if(!r->restart_bootstrap_pending&&!r->search_started&&!r->encounter_started&&!r->fault&&r->counter_valid&&
        r->unit_supported&&s->script_final_prompt&&
        !((s->host_held|s->host_intersection)&3u)&&s->guest_mask==0xffffu){
         r->search_started=1;r->search_requested=1;
@@ -116,7 +152,7 @@ void raw_runtime_before_scan(RawRuntime *r,const RawSample *s) {
         /* A distant forecast needs no unbounded input log. Start the original
            observer only at an actual released boundary near its raw target;
            every subsequent scan, provider and counter receipt remains intact. */
-        if(!r->source_bound||!r->waiting_valid||!r->controls.candidate_valid||
+        if(!r->source_bound||(!r->waiting_valid&&!r->waiting_recheck)||!r->controls.candidate_valid||
            r->fault||r->encounter_started||r->original_raw_a_seen||
            !distance||distance>=0x80000000u)
             cancel_pending_plan(r);
@@ -153,14 +189,31 @@ int raw_runtime_command(RawRuntime *r,const ch_command *c) {
 }
 void raw_runtime_poll_player(RawRuntime *r,uint32_t keys,const RawSample *s) {
     ch_input i;memset(&i,0,sizeof(i));
+    if(r->frontend_suspended||r->restart_bootstrap_pending) {
+        /* Menu keys are original front-end input, not a new game pause/step.
+           Keep the last game counter for strict validation when it resumes.
+           Checked Restart loading also waits for a complete new game unit. */
+        r->controls.previous_keys=keys;r->controls.blocked_keys=keys;
+        r->controls.pending_l_key=r->controls.pending_r_key=0;
+        memset(&r->view,0,sizeof(r->view));r->view.overlay_visible=r->controls.overlay_visible;
+        r->view.interface_locked=r->controls.interface_locked;r->view.fault=r->controls.fault;
+        return;
+    }
     i.physical_keys=keys;i.counter=r->counter;
     i.counter_valid=(uint8_t)r->counter_valid;i.at_native_boundary=(uint8_t)r->at_gate;
     i.runtime=r->runtime;i.scene_epoch=r->scene_epoch;i.source_generation=r->source_generation;
     i.completed_request_id=r->completed_request;
-    i.scene_eligible=(uint8_t)(s->script_final_prompt&&r->unit_supported&&r->source_bound&&r->waiting_valid&&
+    i.scene_eligible=(uint8_t)(s->script_final_prompt&&r->unit_supported&&r->source_bound&&
+        (r->waiting_valid||r->waiting_recheck)&&
         r->source.source_epoch==r->scene_epoch&&!r->encounter_started&&!r->fault&&
         !r->original_raw_a_seen);
-    ch_controller_update(&r->controls,&i,&r->view);
+    /* Rechecking keeps the already bound display target. New solver work
+       still requires a current complete aligned state. */
+    {uint32_t need=r->controls.need_query;
+     if(r->waiting_recheck)r->controls.need_query=0;
+     ch_controller_update(&r->controls,&i,&r->view);
+     if(r->waiting_recheck&&need&&!r->controls.candidate_valid&&
+        !r->controls.active_query.query_id)r->controls.need_query=need;}
     /* Controller-only failures also withdraw the bound source and expose the
        actual pause/counter reason. Never clear that fault to retry a query. */
     if(r->controls.fault&&!r->fault)fault(r,RAW_FAULT_ORDER);
@@ -169,17 +222,20 @@ void raw_runtime_poll_player(RawRuntime *r,uint32_t keys,const RawSample *s) {
        RESUME command into a step or supply/clear any guest input. */
     if(r->view.command.kind&&!raw_runtime_command(r,&r->view.command))fault(r,RAW_FAULT_COMMAND);
     /* Worker queries run independently of the player's pause state. */
-    if(r->query_status==7u&&r->source_bound&&!r->fault&&
+    if(r->query_status==7u&&r->source_bound&&!r->waiting_recheck&&!r->fault&&
        !r->encounter_started&&!r->controls.active_query.query_id)
         ch_controller_request_query(&r->controls);
 }
 void raw_runtime_begin_scan(RawRuntime *r,const RawSample *s) {
+    if(r->frontend_suspended&&frontend_without_game_scan(s))return;
     if(!r->at_gate||r->runtime==CH_RUNTIME_PAUSED||r->scan_open){fault(r,RAW_FAULT_ORDER);return;}
     r->scan_id++;r->scan_before_counter=s->counter;r->scan_before_held=s->host_held;
     r->engine_entries=0;r->previous_unit_supported=r->unit_supported;r->have_previous_scan=1;
+    if(r->restart_bootstrap_pending)r->restart_bootstrap_unit_supported=(uint32_t)ordinary(s);
     r->scan_open=1;r->at_gate=0;log_event(r,RAW_EVENT_BEFORE_SCAN,s);
 }
 void raw_runtime_after_scan(RawRuntime *r,const RawSample *s) {
+    if(r->restart_bootstrap_pending&&!ordinary(s))r->restart_bootstrap_unit_supported=0u;
     if(!r->scan_open||!s->counter_read||s->counter!=r->scan_before_counter) {
         fault(r,RAW_FAULT_ORDER);return;
     }
@@ -199,6 +255,12 @@ void raw_runtime_after_scan(RawRuntime *r,const RawSample *s) {
               !r->actual_raw_release_seen) {
         r->actual_raw_release_seen=1;r->actual_raw_release=s->counter;
     }
+    if(r->waiting_recheck&&(s->host_held&1u)) {
+        /* Actual HID always reaches the game. A press made without a checked
+           waiting state cannot later acquire the retained forecast. */
+        r->plan_active=0;r->plan_pending=0;r->plan_failed=1;r->input_condition_matches=0;
+        ch_controller_request_query(&r->controls);
+    }
     if(!ordinary(s))invalidate_source(r);
     if(r->plan_pending&&((s->host_held|s->host_intersection)&1u))cancel_pending_plan(r);
     if(r->plan_active) {
@@ -210,6 +272,8 @@ void raw_runtime_after_scan(RawRuntime *r,const RawSample *s) {
 }
 void raw_runtime_engine_entry(RawRuntime *r,const RawSample *s) {
     uint32_t held=(s->guest_mask&1u)?0u:1u;
+    if(r->restart_bootstrap_pending&&(!ordinary(s)||s->counter!=r->scan_before_counter))
+        r->restart_bootstrap_unit_supported=0u;
     if(r->scan_open){fault(r,RAW_FAULT_ORDER);return;}
     r->engine_entries++;log_event(r,RAW_EVENT_ENGINE_ENTRY,s);
     r->observed=*s;
@@ -240,7 +304,7 @@ void raw_runtime_engine_entry(RawRuntime *r,const RawSample *s) {
          * immutable forecast still binds this original effective sample only
          * when its saved raw-press observation and effective target both match.
          * The input-plan observer supplies that raw condition separately. */
-        if(r->plan_active&&!r->plan_failed&&r->input_plan.effective_a_seen&&
+        if(r->waiting_valid&&!r->waiting_recheck&&r->plan_active&&!r->plan_failed&&r->input_plan.effective_a_seen&&
             r->input_plan.observed_effective_a_counter==s->counter&&
             r->candidate.abi==MANUAL_PREDICTION_ABI&&r->candidate.status==MANUAL_QUERY_OK&&
             r->candidate.source_epoch==s->scene_epoch&&r->effective_target==s->counter)
@@ -265,7 +329,7 @@ void raw_runtime_engine_entry(RawRuntime *r,const RawSample *s) {
     r->guest_a_previous=held;
 }
 int raw_runtime_bind_source(RawRuntime *r,const ManualSourceBinding *s,uint64_t generation) {
-    if(!r||!s||s->abi!=MANUAL_PREDICTION_ABI||!s->source_epoch||!generation||
+    if(!r||r->restart_bootstrap_pending||!s||s->abi!=MANUAL_PREDICTION_ABI||!s->source_epoch||!generation||
         s->rng_add>255||s->rng_sub>255||r->encounter_started||r->fault||r->controls.fault||
         !r->observed.script_final_prompt||
         (r->source_generation&&(r->original_raw_a_seen||r->actual_raw_press_seen))||
@@ -347,7 +411,7 @@ int raw_runtime_retry_missed_candidate(RawRuntime *r,const ch_query *q,const Man
 int raw_runtime_accept_candidate(RawRuntime *r,const ch_query *q,const ManualPrediction *p) {
     uint32_t raw,delta;
     ManualCurrentBoundary current;
-    if(!raw_runtime_candidate_bound(r,q,p)||!r->waiting_valid)return 0;
+    if(!raw_runtime_candidate_bound(r,q,p)||!r->waiting_valid||r->waiting_recheck)return 0;
     memset(&current,0,sizeof(current));current.counter=r->counter;current.source_epoch=r->scene_epoch;
     current.source_identity=r->source.source_identity;current.required_context_identity=r->source.required_context_identity;
     if(manual_prediction_state(p,&current,0)!=MANUAL_QUERY_OK)return 0;
@@ -369,6 +433,8 @@ void raw_runtime_actual_dv(RawRuntime *r,uint16_t actual) {
 }
 uint32_t raw_original_target(uint32_t lr) {
     switch(lr) {
+    case 0x10ed60u:return 0x18c670u;
+    case 0x1858e8u:return 0x1928a8u;
     case 0x1042f4u:return 0x110fa0u;
     case 0x104378u:return 0x10a430u;
     case 0x1a82e0u:return 0x1aabf8u;

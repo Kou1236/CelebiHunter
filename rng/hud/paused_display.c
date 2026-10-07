@@ -108,13 +108,15 @@ static int allocate_buffer(RawPausedDisplay *p,uint32_t index){
     return RAW_PAUSE_READY;
 }
 static int draw_publish(RawPausedDisplay *p,const RawHud *h,const RawPauseSnapshot *s,uint32_t index){
-    RawPauseBuffer *b=&p->buffers[index];RawPauseRecord r;RawHudSurface surface;RawHudPaint paint;int result;
+    RawPauseBuffer *b=&p->buffers[index];RawPauseRecord r;RawPauseSnapshot ready;
+    RawHudSurface surface;RawHudPaint paint;uint32_t submitted_epoch;int result;
     /* Entry publishes one fully validated slot. The unused alternate is
        leased only after the existing display acknowledgement permits an
        actual HUD change or fresh player-step image to be drawn into it. */
     if(allocate_buffer(p,index)!=RAW_PAUSE_READY)return RAW_PAUSE_ERROR;
     if(!b->pixels||b->bytes<RAW_PAUSE_ALLOC_BYTES||!b->vaddr||!b->paddr||!b->publish_vaddr)
         return failed(p,RAW_PAUSE_DIAG_BUFFER,index+1);
+    p->prepared_attempts++;
     p->diagnostic_stage=RAW_PAUSE_DIAG_PAINT;
     if(!p->background_bytes||p->background_bytes>RAW_PAUSE_PIXEL_BYTES)return failed(p,RAW_PAUSE_DIAG_BACKGROUND,1);
     memcpy(b->pixels,p->background,p->background_bytes);
@@ -122,15 +124,24 @@ static int draw_publish(RawPausedDisplay *p,const RawHud *h,const RawPauseSnapsh
     if(raw_hud_paint_transparent(h,&surface,&p->layout,&paint)!=RAW_HUD_PAINTED)return failed(p,RAW_PAUSE_DIAG_PAINT,1);
     p->diagnostic_stage=RAW_PAUSE_DIAG_FLUSH;
     if(p->ops.flush(p->ops.user,b,p->background_bytes)!=1)return failed(p,RAW_PAUSE_DIAG_FLUSH,1);
-    r=p->original.record;r.swap=1-s->record.swap;r.display_select=r.swap;
+    /* Copying a paused image may span display events without changing that
+       image. Refresh only its publication timestamp after preparation, rather
+       than rejecting and repeating the entire copy for each such event.
+       An empty relay ring may consume events without changing the image.
+       Image, ownership, pending and queue-error checks remain mandatory. */
+    result=snapshot(p,&ready);if(result!=RAW_PAUSE_READY){p->prepared_snapshot_retries++;return result;}
+    if(!raw_pause_snapshot_same_image(s,&ready)){
+        p->prepared_source_retries++;p->rejected_expected=*s;p->rejected_current=ready;return RAW_PAUSE_WAIT;
+    }
+    r=p->original.record;r.swap=1-ready.record.swap;r.display_select=r.swap;
     r.fb_a=b->publish_vaddr;r.fb_b=p->original.record.fb_b?b->publish_vaddr:0;
     /* FCRAM BGR8 top buffer. Bits 8/9 name VRAM addresses and must never
        survive from the original VRAM image (for example format 0x343). */
     r.format=p->original.record.format&~0x300u;r.zero=0;
     p->diagnostic_stage=RAW_PAUSE_DIAG_PUBLISH;
-    result=p->ops.publish(p->ops.user,s,&r);
-    if(result!=1)return result<0?failed(p,RAW_PAUSE_DIAG_PUBLISH,1):RAW_PAUSE_WAIT;
-    p->submitted=r;p->submitted_epoch=s->top_epoch;p->current=index;p->ack_seen=0;p->ack_clear_epoch=0;
+    result=p->ops.publish(p->ops.user,&ready,&r,&submitted_epoch);
+    if(result!=1){p->native_publish_retries++;return result<0?failed(p,RAW_PAUSE_DIAG_PUBLISH,1):RAW_PAUSE_WAIT;}
+    p->submitted=r;p->submitted_epoch=submitted_epoch;p->current=index;p->ack_seen=0;p->ack_clear_epoch=0;
     p->rendered=*h;p->published=1;p->state=RAW_PAUSE_PANEL_PENDING;return RAW_PAUSE_WAIT;
 }
 static int step_snapshot(RawPausedDisplay *p,RawPauseSnapshot *s){int r;
@@ -166,7 +177,7 @@ int raw_paused_display_game_present(RawPausedDisplay *p,const RawPauseRecord *r)
     p->step_record=*r;p->step_present_seen=1;p->step_clear_seen=0;p->step_clear_epoch=0;
     return 1;
 }
-int raw_paused_display_leave(RawPausedDisplay *p,int paused){RawPauseSnapshot s;int r;
+int raw_paused_display_leave(RawPausedDisplay *p,int paused){RawPauseSnapshot s;uint32_t submitted_epoch;int r;
     if(!p||!p->initialized||!paused)return RAW_PAUSE_ERROR;
     if(p->state==RAW_PAUSE_RETAINED)return RAW_PAUSE_ERROR;
     p->leaving=1;
@@ -180,9 +191,9 @@ int raw_paused_display_leave(RawPausedDisplay *p,int paused){RawPauseSnapshot s;
     r=ack(p,&s);if(r!=RAW_PAUSE_READY)return r;
     if(p->state==RAW_PAUSE_RESTORE_PENDING){p->published=0;p->state=RAW_PAUSE_CLEANUP;return cleanup(p);}
     p->diagnostic_stage=RAW_PAUSE_DIAG_RESTORE;
-    r=p->ops.publish(p->ops.user,&s,&p->original.record);
+    r=p->ops.publish(p->ops.user,&s,&p->original.record,&submitted_epoch);
     if(r!=1)return r<0?failed(p,RAW_PAUSE_DIAG_RESTORE,1):RAW_PAUSE_WAIT;
-    p->submitted=p->original.record;p->submitted_epoch=s.top_epoch;p->state=RAW_PAUSE_RESTORE_PENDING;
+    p->submitted=p->original.record;p->submitted_epoch=submitted_epoch;p->state=RAW_PAUSE_RESTORE_PENDING;
     p->ack_seen=0;p->ack_clear_epoch=0;
     return RAW_PAUSE_WAIT;
 }

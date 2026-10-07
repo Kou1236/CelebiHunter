@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.4.0
+
+### RNG
+
+- Fix errors after restarting the game from the VC menu.
+- Fix screen flashes when searching or refreshing a Target.
+- Fix delayed L steps and the HUD disappearing after the first step.
+- Keep the Target during temporary state checks.
+
+### Reset
+
+- No changes. Includes the original v1.0.0 `Reset.3gx`.
+
 ## v1.3.0
 
 ### RNG

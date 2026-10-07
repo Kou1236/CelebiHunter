@@ -1,4 +1,4 @@
-"""Run the RNG v1.3.0 host regressions with a C99 compiler.
+"""Run the RNG v1.4.0 host regressions with a C99 compiler.
 
 Use CC (or --cc) for gcc/clang, or ZIG (or --zig) for `zig cc`.
 The copied C scenarios and Python scalar/native-fixture assertions keep their
@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 RNG = ROOT / "rng"
 TESTS = ROOT / "tests" / "rng"
 COMMON_SOURCES = (
+    "restart_lifecycle.c",
     "raw_runtime.c",
     "raw_service.c",
     "raw_hud.c",
@@ -85,11 +86,27 @@ def run_tests(compiler: list[str], build: Path) -> None:
     includes = ["-I" + str(RNG), "-I" + str(RNG / "prediction")]
     suffix = ".exe" if os.name == "nt" else ""
     scenarios = (
+        ("test_step_trace", (), []),
+        ("test_paused_read_scope", ("hud/framebuffer_hud.c",),
+         ["-I" + str(TESTS / "hud-mock")]),
         ("test_runtime_candidate", COMMON_SOURCES, []),
         ("test_long_plan", COMMON_SOURCES + ("environment_session.c",), []),
         ("test_platform_sampler_compat", ("platform/sampler.c",), []),
         ("test_platform_scene_diagnostics", ("platform/scene.c",), []),
         ("test_result_gate", ("result/result_gate.c",), []),
+        ("test_installer_restart", ("platform/installer.c",), []),
+        ("test_restart_platform", COMMON_SOURCES + (
+            "platform_binding.c", "platform/sampler.c", "platform/scene.c"), []),
+        (
+            "test_hud_present",
+            ("hud/sink_3ds.c", "hud/framebuffer_hud.c", "raw_hud.c"),
+            ["-I" + str(TESTS / "hud-mock")],
+        ),
+        (
+            "test_paused_step_display",
+            ("hud/paused_display.c", "hud/sink_3ds.c", "hud/framebuffer_hud.c"),
+            ["-I" + str(TESTS / "hud-mock")],
+        ),
         (
             "test_environment_compat",
             ("environment.c", "environment_session.c", "source_capture.c",
@@ -108,6 +125,12 @@ def run_tests(compiler: list[str], build: Path) -> None:
                 "-Wno-misleading-indentation",
                 "-I" + str(TESTS / "mock"),
             ],
+        ),
+        (
+            "test_restart_lifecycle",
+            WAITING_SOURCES,
+            ["-Wno-unused-variable", "-Wno-misleading-indentation",
+             "-I" + str(TESTS / "mock")],
         ),
     )
     for name, sources, extra in scenarios:
@@ -139,7 +162,7 @@ def run_tests(compiler: list[str], build: Path) -> None:
     for name in ("check_terminal.py", "check_query.py"):
         print(f"RNG: {name}", flush=True)
         run([sys.executable, str(TESTS / name), str(library)], env)
-    print("RNG host tests passed (9 regression groups).", flush=True)
+    print("RNG host tests passed (16 regression groups).", flush=True)
 
 
 def main() -> int:

@@ -13,7 +13,9 @@ ELF = ROOT / "build/rng/RNG.elf"
 METADATA = ROOT / "rng/RNG.plgInfo"
 REQUIRED = (
     "_start", "main", "raw_device_startup", "ch_loader_abort", "ch_raw_bridge",
-    "ch_manual_alias_probe", "__sync_init", "__system_initSyscalls", "srvInit",
+    "ch_manual_alias_probe", "raw_restart_receipt", "raw_frontend_read",
+    "raw_runtime_restart_checked", "raw_environment_backend_enter_restart",
+    "__sync_init", "__system_initSyscalls", "srvInit",
     "hidInit", "hidScanInput", "threadCreate", "svcMapProcessMemoryEx",
     "svcUnmapProcessMemoryEx", "svcConvertVAToPA", "svcFlushEntireDataCache",
     "svcInvalidateEntireInstructionCache", "__end__", "__tls_start", "__tls_end",
@@ -41,9 +43,9 @@ def metadata(path: Path) -> dict:
         match = re.search(r"^\s*" + key + r":\s*(\d+)\s*$", text, re.M)
         require(match is not None, f"Missing metadata {key}")
         numbers.append(int(match[1]))
-    require(numbers == [1, 3, 0], "RNG metadata must be version 1.3.0")
+    require(numbers == [1, 4, 0], "RNG metadata must be version 1.4.0")
     title = re.search(r"^Title:\s*(.+)$", text, re.M)
-    require(title is not None and title[1].strip() == "CelebiHunter v1.3.0", "Wrong RNG metadata title")
+    require(title is not None and title[1].strip() == "CelebiHunter v1.4.0", "Wrong RNG metadata title")
     summary = re.search(r"^Summary:\s*(.+)$", text, re.M)
     require(summary is not None, "Missing metadata Summary")
     targets = re.search(r"^Targets:\s*\n\s*-\s*0x00172800\s*(?=\n)", text, re.M)
@@ -53,7 +55,7 @@ def metadata(path: Path) -> dict:
                        ("UsePrivateMemory", "false")):
         require(re.search(r"^" + key + ":\\s*" + value + r"\s*$", text, re.M) is not None,
                 f"Wrong metadata {key}")
-    return {"version": "1.3.0", "encoded_version": 0x01030000,
+    return {"version": "1.4.0", "encoded_version": 0x01040000,
             "title": title[1].strip(), "summary": summary[1].strip(), "sha256": sha(path)}
 
 

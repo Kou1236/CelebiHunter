@@ -1,5 +1,6 @@
 #include "raw_service.h"
 #include "query_completion.h"
+#include "restart_lifecycle.h"
 #include <string.h>
 int raw_service_init(RawService *s,const RawServiceOps *o) {
     uint32_t keys;
@@ -52,7 +53,7 @@ int raw_job_solve_cached(const RawJob *j,Sol61Workspace *w,RawQueryCache *cache,
 static void ui(RawService *s,const RawSample *sample) {
     RawRuntime *r=&s->runtime;RawJob job;ManualPrediction p;RawHud hud;uint32_t keys;
     if(s->ops.physical_keys(s->ops.user,&keys))raw_runtime_poll_player(r,keys,sample);
-    if(s->ops.receive_copy(s->ops.user,&job,&p)) {
+    if(!r->waiting_recheck&&s->ops.receive_copy(s->ops.user,&job,&p)) {
         (void)raw_query_complete(r,&job,&p);
     }
     if(r->view.query.query_id) {
@@ -78,6 +79,22 @@ uint32_t raw_service_route(RawService *s,const ChNativeContext *c) {
     if(!c)return 0;
     chain=raw_original_target(c->lr);
     if(!s||!s->initialized||!chain)return chain;
+    if(c->lr==RAW_RESTART_RECEIPT_LR||c->lr==RAW_MENU_RESET_RECEIPT_LR){
+        if(s->ops.restart_session&&s->ops.restart_session(s->ops.user,c,&s->runtime)>0)
+            s->pending_marker=0u;
+        return chain;
+    }
+    if(s->restart_pending){
+        int restarted;
+        /* The native worker never edits runtime. Other hook routes preserve
+           their original calls while its receipt awaits the main boundary. */
+        if(c->lr!=0x1042f4u)return chain;
+        restarted=s->ops.restart_session?
+            s->ops.restart_session(s->ops.user,c,&s->runtime):0;
+        if(restarted>0)s->pending_marker=0u;
+        else raw_runtime_environment_failed(&s->runtime);
+        if(restarted<=0)return chain;
+    }
     if(c->lr==0x145480u){if(s->ops.present)s->ops.present(s->ops.user,c);return chain;}
     /* This original call sits inside the interpreter's repeated scheduler
        loop. Only the first call following the applied-input marker has work.
@@ -88,7 +105,8 @@ uint32_t raw_service_route(RawService *s,const ChNativeContext *c) {
     if(c->lr==0x1042f4u) {
         if(good)raw_runtime_before_scan(r,&a);
         else {r->at_gate=1;raw_runtime_sample_failed(r);}
-        if(s->ops.completed_unit)s->ops.completed_unit(s->ops.user,c,r,good);
+        if(r->frontend_suspended)s->pending_marker=0u;
+        else if(s->ops.completed_unit)s->ops.completed_unit(s->ops.user,c,r,good);
         ui(s,&a);
         /* Only a player command may enter this loop. Jobs and display keep
          * running; original physical refresh remains on the caller's stack. */
@@ -138,7 +156,7 @@ uint32_t raw_service_route(RawService *s,const ChNativeContext *c) {
         s->pending_marker=0;
         if(good&&s->ops.first_scheduler&&s->ops.first_scheduler(s->ops.user,c,r)<0)
             raw_runtime_environment_failed(r);
-        if(good&&(!r->source_bound||(r->refresh_needed&&(r->search_started||r->runtime==CH_RUNTIME_STEPPING)&&
+        if(good&&!r->restart_bootstrap_pending&&(!r->source_bound||(r->refresh_needed&&(r->search_started||r->runtime==CH_RUNTIME_STEPPING)&&
            !r->step_by_physical_a&&!r->controls.candidate_valid&&!r->plan_active&&
            !r->original_raw_a_seen&&!r->actual_raw_press_seen))&&!r->encounter_started&&!r->fault&&
             a.script_final_prompt&&s->ops.read_new_source) {

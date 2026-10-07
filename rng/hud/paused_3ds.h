@@ -20,6 +20,12 @@ typedef struct {
     RawPause3dsDiagnostic diagnostic;
     void *clean_user;
     int (*clean_overlay)(void *,uint32_t,uint32_t,uint32_t,uint32_t,uint8_t *,uint32_t);
+    /* Optional positive mapping proofs for one observe's read-only contract
+       and paired data reads. Never span allocation, flush or native publish.
+       A successful begin is always paired with end, including failed reads. */
+    void *read_scope_user;
+    int (*read_scope_begin)(void *);
+    void (*read_scope_end)(void *);
 } RawPause3ds;
 /* Startup-only exclusive reservation, carved out BEFORE malloc is enabled.
  * Both slots remain Luma-owned Shared mappings for the process lifetime.

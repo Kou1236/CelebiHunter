@@ -21,6 +21,9 @@ static int job_bound(const RawRuntime *r,const RawJob *j){
 int raw_query_complete(RawRuntime *r,const RawJob *j,const ManualPrediction *p){
     uint32_t status;
     if(!r||!j||!p||!same_token(&j->token,&r->controls.active_query))return RAW_QUERY_IGNORED;
+    /* The device leaves this result in its mailbox while rechecking. Other
+       callers must likewise retain both immutable arguments on deferral. */
+    if(r->waiting_recheck)return RAW_QUERY_DEFERRED;
     r->query_returned_counter=r->counter;r->query_result_target=p->target_counter;
     if(!job_bound(r,j)){
         r->query_failure_detail=RAW_QUERY_DETAIL_JOB_BINDING;

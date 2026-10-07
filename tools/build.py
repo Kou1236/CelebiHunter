@@ -1,4 +1,4 @@
-"""Build Reset with its original implementation and RNG with the C v1.3.0 runtime."""
+"""Build Reset with its original implementation and RNG with the C v1.4.0 runtime."""
 from __future__ import annotations
 
 import argparse
@@ -12,7 +12,7 @@ DIST = ROOT / "dist"
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--reset", action="store_true", help="Build the unchanged Rust Reset implementation")
-    parser.add_argument("--rng", action="store_true", help="Build the C RNG v1.3.0 implementation; Rust is not required")
+    parser.add_argument("--rng", action="store_true", help="Build the C RNG v1.4.0 implementation; Rust is not required")
     args = parser.parse_args()
     both = not (args.reset or args.rng)
     if args.reset or both:

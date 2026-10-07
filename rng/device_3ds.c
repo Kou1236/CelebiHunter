@@ -10,6 +10,8 @@
 #include "result/result_gate.h"
 #include "audio/paused_audio_3ds.h"
 #include "source-observer/aligned_waiting.h"
+#include "restart_lifecycle.h"
+#include "step_trace.h"
 extern void ch_manual_alias_probe(void);
 #define RAW_SOURCE_READONLY_RETRIES 4u
 #define RAW_SOURCE_RETRY_ADVANCES 16u
@@ -58,6 +60,12 @@ typedef struct {
     uint32_t waiting_observation_valid;
     SourceAlignedDiagnostic waiting_read_diagnostic;
     RawWaitingDiagnostic waiting_diagnostic;
+    uint32_t restart_receipts;
+    RawHud diagnostic_pending;
+    uint32_t diagnostic_ticks;
+    RawRestartNotice restart_notice;
+    LightLock step_trace_lock;
+    RawStepTrace step_trace;
 } Device;
 static Device device;
 static RawQueryCache worker_query_cache;
@@ -180,7 +188,8 @@ static void add_source_diag(Device *d,const RawRuntime *r,RawHud *h){
            r->counter-s->waiting_unavailable_since<RAW_WAIT_UNAVAILABLE_ADVANCES){
             add_diag(h,color,"W00","rechecking live state; Target unavailable");return;
         }
-        color=0xff9090u;
+        /* A withdrawn waiting trajectory can recover on the next original
+           unit. It is a search condition, not a stopped runtime/write fault. */
         if(w->stage==RAW_WAIT_DIAG_ALIGNMENT){
             if(w->aligned.stage==SOURCE_ALIGNED_READ){
                 p=diag_copy(p,"M");p=diag_number(p,w->aligned.read_ordinal);
@@ -419,6 +428,7 @@ static int keys(void *u,uint32_t *k){Device *d=u;return raw_platform_keys(&d->bi
    carries only requested fields; a pending output restore changes its title
    color instead of adding the former research/status panel. */
 static void diagnose_hud(Device *d,const RawRuntime *r,RawHud *h){
+    RawHud detail;uint32_t i;
     if(h->count&&d->pause_audio.initialized&&d->pause_audio_status!=1&&
        (r->runtime==CH_RUNTIME_PAUSED||d->pause_audio.owned))h->color[0]=0xffdd70u;
     LightLock_Lock(&d->source_lock);
@@ -430,7 +440,24 @@ static void diagnose_hud(Device *d,const RawRuntime *r,RawHud *h){
     d->source_diagnostic.current_advance=r->counter;
     d->source_diagnostic.target_advance=r->raw_target;
     d->source_diagnostic.input_plan_error=r->input_plan.error;
-    add_source_diag(d,r,h);
+    memset(&detail,0,sizeof(detail));add_source_diag(d,r,&detail);
+    /* Keep one-frame acquisition/revalidation details in the read-only
+       record. Publish a stable nonfatal cause only after repeated UI polls;
+       a closed acquisition or runtime fault is always reported immediately.
+       This only filters presentation, never admission or target validity. */
+    if(!detail.count){d->diagnostic_ticks=0;memset(&d->diagnostic_pending,0,sizeof(d->diagnostic_pending));}
+    else if(r->fault||(d->source_diagnostic.closed&&d->source_diagnostic.phase!=RAW_SOURCE_ADMITTED)){
+        d->diagnostic_ticks=0;
+    }else{
+        if(memcmp(&detail,&d->diagnostic_pending,sizeof(detail))){
+            d->diagnostic_pending=detail;d->diagnostic_ticks=1;
+        }else if(d->diagnostic_ticks<60u)d->diagnostic_ticks++;
+        if(d->diagnostic_ticks<60u)detail.count=0;
+    }
+    for(i=0;i<detail.count&&h->count<12u;i++){
+        h->color[h->count]=detail.color[i];
+        memcpy(h->line[h->count],detail.line[i],sizeof(h->line[0]));h->count++;
+    }
     LightLock_Unlock(&d->source_lock);
 }
 static void hud(void *u,const RawHud *h){Device *d=u;RawHud diagnosed=*h;int changed;
@@ -449,7 +476,10 @@ static int submit(void *u,const RawJob *j){Device *d=u;int ok;
     LightLock_Lock(&d->job_lock);ok=raw_mailbox_submit(&d->mailbox,j);LightLock_Unlock(&d->job_lock);return ok;
 }
 static int receive(void *u,RawJob *j,ManualPrediction *p){Device *d=u;int ok;
-    LightLock_Lock(&d->job_lock);ok=raw_mailbox_receive(&d->mailbox,j,p);LightLock_Unlock(&d->job_lock);return ok;
+    /* A complete result stays immutable in the mailbox until the live state
+       is checked again. Taking it early would misclassify a transient read. */
+    LightLock_Lock(&d->job_lock);ok=ch_raw_service.runtime.waiting_recheck?0:
+        raw_mailbox_receive(&d->mailbox,j,p);LightLock_Unlock(&d->job_lock);return ok;
 }
 static void worker(void *u){Device *d=u;RawJob j;ManualPrediction p;int have,stop;
     for(;;){
@@ -500,11 +530,13 @@ static void save_waiting_alignment(Device *d){
     s->waiting_read_ordinal=a->read_ordinal;s->waiting_read_address=a->read_address;
     s->waiting_read_size=a->read_size;s->waiting_read_pass=a->read_pass;s->waiting_alignment=*a;
 }
-static void waiting_discard(Device *d,uint32_t stage,const CQWaitingState *expected,
+static void waiting_record_failure(Device *d,uint32_t stage,const CQWaitingState *expected,
     const CQWaitingState *actual,const SourceObservation *observed){
     RawRuntime *r=&ch_raw_service.runtime;RawWaitingDiagnostic *a=&d->waiting_diagnostic;
     if(!a->first_valid){a->first_valid=1u;a->first_failure_counter=r->counter;}
-    a->failures++;a->stage=stage;a->counter=r->counter;a->previous_counter=r->waiting_counter;
+    /* Original repeated callbacks at one counter are not new failed units. */
+    if(!a->failures||a->counter!=r->counter)a->failures++;
+    a->stage=stage;a->counter=r->counter;a->previous_counter=r->waiting_counter;
     a->target=r->raw_target;a->applied_mask=d->binding.last_boundary.guest_active_low_mask;
     a->previous_vblank=d->waiting_observation.vblank;
     a->actual_vblank=observed?observed->vblank:0u;a->previous=r->waiting;
@@ -522,17 +554,59 @@ static void waiting_discard(Device *d,uint32_t stage,const CQWaitingState *expec
        d->source_diagnostic.waiting_unavailable_counter!=r->counter)
         d->source_diagnostic.waiting_unavailable_failures++;
     d->source_diagnostic.waiting_unavailable_counter=r->counter;
+}
+static void waiting_discard(Device *d,uint32_t stage,const CQWaitingState *expected,
+    const CQWaitingState *actual,const SourceObservation *observed){
+    RawRuntime *r=&ch_raw_service.runtime;
+    waiting_record_failure(d,stage,expected,actual,observed);
     /* Losing a conditional trajectory is not a failed environment write.
        Cancel every old token/plan; only a new complete actual seed may query.
        Keep player execution and the established source/RTC ownership intact. */
-    r->waiting_valid=0;r->plan_active=0;r->plan_pending=0;
+    r->waiting_valid=0;r->waiting_recheck=0;r->plan_active=0;r->plan_pending=0;
     r->input_condition_matches=0;d->waiting_observation_valid=0;
     ch_controller_request_query(&r->controls);memset(&r->view.query,0,sizeof(r->view.query));
+}
+static int waiting_recheck(Device *d){
+    RawRuntime *r=&ch_raw_service.runtime;
+    uint32_t failures=d->source_diagnostic.waiting_unavailable_failures;
+    if(!failures||d->source_diagnostic.waiting_unavailable_counter!=r->counter)failures++;
+    /* Keep only the last actually checked seed. Neither this flag nor the
+       retained target is permission to apply a forecast to original A. */
+    if(d->waiting_observation_valid&&(r->waiting_valid||r->waiting_recheck)&&
+       r->counter-r->waiting_counter<RAW_WAIT_UNAVAILABLE_ADVANCES&&
+       failures<RAW_WAIT_UNAVAILABLE_ADVANCES&&
+       r->source_bound&&!r->fault&&!r->encounter_started&&!r->original_raw_a_seen&&
+       !r->actual_raw_press_seen&&d->waiting_read_diagnostic.stage!=SOURCE_ALIGNED_BOUNDARY){
+        waiting_record_failure(d,RAW_WAIT_DIAG_ALIGNMENT,0,0,0);
+        r->waiting_valid=0;r->waiting_recheck=1;r->input_condition_matches=0;
+        memset(&r->view.query,0,sizeof(r->view.query));return 1;
+    }
+    return 0;
+}
+static int waiting_same_scene(const SourceObservation *a,const SourceObservation *b){
+    const ChFinalPrompt *x=&a->scene,*y=&b->scene;
+    return a->epoch==b->epoch&&a->boundary.engine_pointer==b->boundary.engine_pointer&&
+        x->rom_pointer==y->rom_pointer&&x->wram0_pointer==y->wram0_pointer&&
+        x->wram1_pointer==y->wram1_pointer&&x->hram_pointer==y->hram_pointer&&x->io_pointer==y->io_pointer&&
+        x->script_mode==y->script_mode&&x->script_running==y->script_running&&
+        x->script_bank==y->script_bank&&x->script_next==y->script_next&&
+        x->map_group==y->map_group&&x->map_number==y->map_number;
+}
+static int waiting_plan_caught_up(const RawRuntime *r,const SourceObservation *o){
+    const MpInputPlan *p=&r->input_plan;
+    if(!r->plan_active)return !r->plan_failed;
+    /* Every missed aligned read still had actual original scan/mask receipts.
+       Recovery never creates a receipt for a unit that was not observed. */
+    return p->abi==MP_ABI&&p->state!=MP_INVALID&&!p->error&&!p->raw_press_seen&&
+        p->source_epoch==o->epoch&&!memcmp(p->source_identity.bytes,r->source.source_identity.bytes,32)&&
+        p->current_counter==o->counter&&p->scan_recorded&&p->mask_recorded&&
+        p->last_provider_mask==o->applied_mask&&
+        p->last_held==o->boundary.host_cache[0]&&p->last_intersection==o->boundary.host_cache[3];
 }
 static int observe_waiting(Device *d,const ManualSourceBinding *fresh){
     RawRuntime *r=&ch_raw_service.runtime;SourceObservation observed;
     CQWaitingState actual,expected;SourceNormalConditions conditions;
-    SourceInferredNormalPair pair;uint32_t delta;int status;
+    SourceInferredNormalPair pair;uint32_t delta,i;int status;
     int scope=ch_3ds_read_begin(&d->backend);
     status=source_aligned_waiting_diagnostic(&d->binding.read,&d->binding.last_boundary,
         &d->binding.last_prompt,d->binding.source_epoch,&observed,&actual,&d->waiting_read_diagnostic);
@@ -544,7 +618,8 @@ static int observe_waiting(Device *d,const ManualSourceBinding *fresh){
             d->source_diagnostic.waiting_stage=RAW_WAIT_DIAG_ALIGNMENT;
             save_waiting_alignment(d);return 0;
         }
-        waiting_discard(d,RAW_WAIT_DIAG_ALIGNMENT,0,0,0);return 1;
+        if(!waiting_recheck(d))waiting_discard(d,RAW_WAIT_DIAG_ALIGNMENT,0,0,0);
+        return 1;
     }
     if(fresh){
         if(observed.counter!=fresh->origin_counter||actual.a!=fresh->rng_add||
@@ -563,15 +638,21 @@ static int observe_waiting(Device *d,const ManualSourceBinding *fresh){
             waiting_discard(d,RAW_WAIT_DIAG_BINDING,0,&actual,&observed);
             r->refresh_needed=1u;return 1;
         }
-        if(!r->waiting_valid||!d->waiting_observation_valid)goto accept_actual;
+        if((!r->waiting_valid&&!r->waiting_recheck)||!d->waiting_observation_valid)goto accept_actual;
         delta=observed.counter-r->waiting_counter;
-        if(delta>1u){waiting_discard(d,RAW_WAIT_DIAG_COUNTER,0,&actual,&observed);goto accept_actual;}
+        if(delta>RAW_WAIT_UNAVAILABLE_ADVANCES||(!r->waiting_recheck&&delta>1u)){
+            waiting_discard(d,RAW_WAIT_DIAG_COUNTER,0,&actual,&observed);goto accept_actual;}
         expected=r->waiting;
-        if(delta&&!cq_waiting_next(&expected)){
+        for(i=0;i<delta;i++)if(!cq_waiting_next(&expected)){
             waiting_discard(d,RAW_WAIT_DIAG_PROJECTION,0,&actual,&observed);goto accept_actual;}
         if(memcmp(&expected,&actual,sizeof(actual))){
             waiting_discard(d,RAW_WAIT_DIAG_STATE,&expected,&actual,&observed);goto accept_actual;}
-        if(delta){
+        if(!waiting_same_scene(&d->waiting_observation,&observed)||
+           ((observed.vblank-d->waiting_observation.vblank)&255u)!=delta){
+            waiting_discard(d,RAW_WAIT_DIAG_INFER,&expected,&actual,&observed);goto accept_actual;}
+        if(r->waiting_recheck&&!waiting_plan_caught_up(r,&observed)){
+            waiting_discard(d,RAW_WAIT_DIAG_COUNTER,&expected,&actual,&observed);goto accept_actual;}
+        if(delta==1u){
             memset(&conditions,0,sizeof(conditions));conditions.abi=SOURCE_OBSERVER_ABI;
             conditions.restricted_wait_path_model=1u;conditions.normal_pair_count=1u;
             conditions.epoch=observed.epoch;conditions.before_counter=r->waiting_counter;
@@ -587,7 +668,7 @@ static int observe_waiting(Device *d,const ManualSourceBinding *fresh){
         }
     }
 accept_actual:
-    r->waiting=actual;r->waiting_counter=observed.counter;r->waiting_valid=1u;
+    r->waiting=actual;r->waiting_counter=observed.counter;r->waiting_valid=1u;r->waiting_recheck=0;
     d->source_diagnostic.waiting_unavailable_failures=0;
     d->source_diagnostic.waiting_unavailable_since=d->source_diagnostic.waiting_unavailable_counter=0;
     d->waiting_observation=observed;d->waiting_observation_valid=1u;return 1;
@@ -653,6 +734,7 @@ static int source(void *u,const ChNativeContext *c,ManualSourceBinding *s,uint64
     /* Typed settings and full actual before/after reads stay on the owned
        original engine caller, never on the solver or presentation thread. */
     LightLock_Lock(&d->source_lock);
+    if(ch_raw_service.restart_pending)goto done;
     if(ch_raw_service.runtime.refresh_needed){
         admitted=refresh_source(d,c,s,generation);
         if(admitted<0){
@@ -834,25 +916,36 @@ done:
 }
 static int first(void *u,const ChNativeContext *c,const RawRuntime *r){Device *d=u;int status=0;
     LightLock_Lock(&d->source_lock);
+    if(ch_raw_service.restart_pending)goto done;
     if(raw_environment_session_first_needed(&d->environment,r)&&raw_environment_backend_enter(&d->environment_backend,c)){
         status=raw_environment_session_first(&d->environment,c,tls(),d->binding.source_epoch,r);
         raw_environment_backend_leave(&d->environment_backend);
     }else if(raw_environment_session_first_needed(&d->environment,r))status=-1;
     if(status>=0&&r->source_bound&&!r->encounter_started&&!r->fault)
         (void)observe_waiting(d,0);
+done:
     LightLock_Unlock(&d->source_lock);return status;
 }
 static void present(void *u,const ChNativeContext *c){Device *d=u;RawPresentArgs a;
     /* The pause owner alone may paint its leased slots. Retained slots also
        stay excluded after an unconfirmed restore. */
     if(d->pause_display.state==RAW_PAUSE_STEP_WAIT){
+        LightLock_Lock(&d->step_trace_lock);
+        (void)raw_step_trace_present_begin(&d->step_trace,svcGetSystemTick());
+        LightLock_Unlock(&d->step_trace_lock);
         if(raw_present_decode(&d->presentation,c,&a)&&a.screen_id==0){
             RawPauseRecord record={a.swap,a.fb_a,a.fb_b,a.stride,a.format,a.display_select,0};
             if(raw_paused_display_game_present(&d->pause_display,&record))
-                (void)raw_hud_3ds_original_unpainted_present(&d->screen,a.screen_id,a.swap,
+                /* This admitted original surface excludes private pause slots.
+                   Paint before its native submission so the first L image
+                   retains a HUD while the clean pause clone is acknowledged. */
+                (void)raw_hud_3ds_present(&d->screen,a.screen_id,a.swap,
                     (uint8_t *)(uintptr_t)a.fb_a,(uint8_t *)(uintptr_t)a.fb_b,
                     a.stride,a.format);
         }
+        LightLock_Lock(&d->step_trace_lock);
+        (void)raw_step_trace_present_end(&d->step_trace,svcGetSystemTick());
+        LightLock_Unlock(&d->step_trace_lock);
         return;
     }
     if(d->pause_display.state!=RAW_PAUSE_OFF)return;
@@ -899,14 +992,30 @@ static void completed(void *u,const ChNativeContext *c,RawRuntime *r,uint32_t go
     if(c&&c->lr==0x1042f4u&&r->runtime==CH_RUNTIME_RUNNING&&d->pause_audio.owned)
         d->pause_audio_status=raw_paused_audio_leave(&d->pause_audio,1);
     LightLock_Lock(&d->source_lock);
+    if(ch_raw_service.restart_pending){LightLock_Unlock(&d->source_lock);return;}
+    if(good&&r->runtime==CH_RUNTIME_PAUSED&&!r->step_by_physical_a){
+        LightLock_Lock(&d->step_trace_lock);
+        if(raw_step_trace_active(&d->step_trace)&&r->completed_request==d->step_trace.request_id)
+            (void)raw_step_trace_actual_boundary(&d->step_trace,r->scene_epoch,r->counter,svcGetSystemTick());
+        LightLock_Unlock(&d->step_trace_lock);
+    }
     {int scope=ch_3ds_read_begin(&d->backend);completed_owned(u,c,r,good);
     if(scope)ch_3ds_read_end(&d->backend);}
     LightLock_Unlock(&d->source_lock);
 }
 static int paused(void *u,const ChNativeContext *c,const RawRuntime *r,uint32_t action){
-    Device *d=u;RawHud h;int display;
+    Device *d=u;RawHud h;int display,traced;uint64_t update_begin=0u,update_ticks;
     if(!c||!r||c->lr!=0x1042f4u||!r->at_gate||r->scan_open)return RAW_PAUSE_ERROR;
-    if(action==4)return raw_paused_display_step(&d->pause_display,1);
+    if(action==4){
+        display=raw_paused_display_step(&d->pause_display,1);
+        if(display==1){
+            LightLock_Lock(&d->step_trace_lock);
+            (void)raw_step_trace_accept(&d->step_trace,r->last_request,r->scene_epoch,
+                r->counter,r->step_target,svcGetSystemTick());
+            LightLock_Unlock(&d->step_trace_lock);
+        }
+        return display;
+    }
     /* Restore normally; a bounded failed restore retains owned buffers and
        yields to the player's pending command. No fallback fabricates keys. */
     if(action==2||action==3){
@@ -916,17 +1025,125 @@ static int paused(void *u,const ChNativeContext *c,const RawRuntime *r,uint32_t 
         return display!=1?display:d->pause_audio_status;
     }
     if(action!=1)return RAW_PAUSE_ERROR;
+    LightLock_Lock(&d->step_trace_lock);traced=raw_step_trace_active(&d->step_trace);
+    if(traced)update_begin=svcGetSystemTick();
+    LightLock_Unlock(&d->step_trace_lock);
     d->pause_audio_status=raw_paused_audio_enter(&d->pause_audio,1);
-    raw_runtime_hud(r,&h);diagnose_hud(d,r,&h);return raw_paused_display_update(&d->pause_display,&h,1);
+    raw_runtime_hud(r,&h);diagnose_hud(d,r,&h);display=raw_paused_display_update(&d->pause_display,&h,1);
+    LightLock_Lock(&d->step_trace_lock);
+    if(traced){
+        update_ticks=svcGetSystemTick()-update_begin;d->step_trace.pause_update_count++;
+        d->step_trace.pause_update_ticks+=update_ticks;
+        if(update_ticks>d->step_trace.pause_update_max_ticks)d->step_trace.pause_update_max_ticks=update_ticks;
+    }
+    if(raw_step_trace_active(&d->step_trace)&&r->completed_request==d->step_trace.request_id&&
+       (d->step_trace.seen&RAW_STEP_TRACE_ACTUAL_BOUNDARY)){
+        if(d->pause_display.state==RAW_PAUSE_PANEL_PENDING)
+            (void)raw_step_trace_clone_published(&d->step_trace,svcGetSystemTick());
+        if(d->pause_display.state==RAW_PAUSE_ACTIVE&&
+           (d->step_trace.seen&RAW_STEP_TRACE_CLONE_PUBLISHED))
+            (void)raw_step_trace_clone_acknowledged(&d->step_trace,svcGetSystemTick());
+    }
+    LightLock_Unlock(&d->step_trace_lock);return display;
 }
+static int restart_completed_resume(const RawRuntime *r){
+    return r->runtime==CH_RUNTIME_RUNNING&&r->controls.pending.kind==CH_COMMAND_RESUME&&
+        r->controls.pending.request_id&&r->controls.pending.request_id==r->last_request&&
+        r->controls.pending.request_id==r->completed_request;
+}
+static int restart_session(void *u,const ChNativeContext *c,RawRuntime *r){
+    Device *d=u;RawEnvironmentOps environment_ops;uint64_t epoch;
+    uint32_t held;int scope,status=0,boundary,resume;
+    if(!c||!r)return 0;
+    if(c->lr==RAW_MENU_RESET_RECEIPT_LR){
+        Ch3dsBackend local;ChReadOps read;RawRestartNotice notice;int captured;
+        /* Confirmed touchscreen Yes invokes18588C on a native worker. It
+           may capture a receipt, but cannot touch the main runtime/read scope. */
+        if(!ch_3ds_worker_read_ops(&d->backend,&local,&read))return 0;
+        scope=ch_3ds_read_begin(&local);LightLock_Lock(&d->source_lock);
+        captured=!ch_raw_service.restart_pending&&
+            raw_restart_notice_capture(&read,c,d->binding.source_epoch,&notice);
+        if(captured&&notice.caller_lr==RAW_GUI_RESET_CALLER_LR){
+            d->restart_notice=notice;
+            __dmb();
+            ch_raw_service.restart_pending=1u;
+        }
+        LightLock_Unlock(&d->source_lock);if(scope)ch_3ds_read_end(&local);
+        if(!captured||notice.caller_lr==RAW_GUI_RESET_CALLER_LR)return 0;
+        /* The internal debug caller is the original main-thread path. */
+    }
+    scope=ch_3ds_read_begin(&d->backend);
+    LightLock_Lock(&d->source_lock);
+    boundary=c->lr==0x1042f4u;
+    if(boundary){
+        if(!ch_raw_service.restart_pending||!d->restart_notice.valid||
+           d->restart_notice.caller_lr!=RAW_GUI_RESET_CALLER_LR||
+           d->restart_notice.source_epoch!=d->binding.source_epoch||
+           d->restart_notice.source_epoch==UINT64_MAX||
+           d->restart_notice.target_epoch!=d->restart_notice.source_epoch+1u)goto done;
+        epoch=d->restart_notice.target_epoch;
+    }else{
+        if(ch_raw_service.restart_pending||d->binding.source_epoch==UINT64_MAX)goto done;
+        epoch=d->binding.source_epoch+1u;
+    }
+    resume=restart_completed_resume(r);
+    if((!raw_runtime_restart_eligible(r,epoch)&&
+        !(resume&&epoch&&epoch>r->scene_epoch&&!r->display_pending&&!r->display_error&&
+          r->fault!=RAW_FAULT_ENVIRONMENT&&r->fault!=RAW_FAULT_DISPLAY))||
+       d->pause_display.state!=RAW_PAUSE_OFF||d->pause_audio.owned||ch_raw_service.display_owned)goto done;
+    if((!boundary&&!raw_restart_receipt(&d->binding.read,c))||!raw_platform_keys(&d->binding,&held)||
+       d->environment.state.poisoned||d->environment.last_status==RAW_ENV_STORE_FAILED)goto done;
+    if(d->environment.state.rtc_owned){
+        int entered=boundary?raw_environment_backend_enter_restart_boundary(&d->environment_backend,c):
+            raw_environment_backend_enter_restart(&d->environment_backend,c);
+        if(!entered){
+            raw_runtime_environment_failed(r);goto done;
+        }
+        d->environment.cleanup_attempted=1u;
+        d->environment.last_status=(uint32_t)raw_environment_restore_rtc(&d->environment.ops,&d->environment.state);
+        raw_environment_backend_leave(&d->environment_backend);
+        if(d->environment.last_status!=RAW_ENV_OK||d->environment.state.rtc_owned||
+           d->environment.state.poisoned){raw_runtime_environment_failed(r);goto done;}
+    }
+    if(!boundary&&!raw_restart_receipt(&d->binding.read,c)){raw_runtime_environment_failed(r);goto done;}
+    /* The worker owns any already copied solver input. Retire its publication
+       epoch while keeping running=true until that actual finish arrives. */
+    LightLock_Lock(&d->job_lock);raw_mailbox_retire(&d->mailbox,epoch);
+    environment_ops=d->environment.ops;
+    (void)raw_environment_session_init(&d->environment,&environment_ops);
+    memset(&d->capture,0,sizeof(d->capture));
+    memset(&d->result_source,0,sizeof(d->result_source));memset(&d->result_gate,0,sizeof(d->result_gate));
+    memset(&d->result_snapshot,0,sizeof(d->result_snapshot));memset(&d->actual_result,0,sizeof(d->actual_result));
+    memset(&d->refresh_result_source,0,sizeof(d->refresh_result_source));
+    memset(&d->refresh_result_gate,0,sizeof(d->refresh_result_gate));memset(&d->result_progress,0,sizeof(d->result_progress));
+    memset(&d->waiting_observation,0,sizeof(d->waiting_observation));d->waiting_observation_valid=0u;
+    memset(&d->waiting_read_diagnostic,0,sizeof(d->waiting_read_diagnostic));
+    memset(&d->waiting_diagnostic,0,sizeof(d->waiting_diagnostic));
+    memset(&d->source_diagnostic,0,sizeof(d->source_diagnostic));d->source_diagnostic.version=5u;
+    memset(&d->diagnostic_pending,0,sizeof(d->diagnostic_pending));d->diagnostic_ticks=0u;
+    d->source_diagnostic.result_enemy_first_index=UINT32_MAX;
+    d->source_requested=d->source_available=d->refresh_attempted=d->refresh_attempt_counter=0u;
+    d->binding.source_epoch=epoch;d->binding.omit_arrival_check=0u;
+    memset(&d->binding.last_boundary,0,sizeof(d->binding.last_boundary));
+    memset(&d->binding.last_prompt,0,sizeof(d->binding.last_prompt));
+    if(resume)memset(&r->controls.pending,0,sizeof(r->controls.pending));
+    status=raw_runtime_restart_checked(r,epoch,held);d->restart_receipts+=(uint32_t)status;
+    if(status&&boundary)d->restart_notice.valid=0u;
+    LightLock_Unlock(&d->job_lock);
+done:
+    if(boundary){__dmb();ch_raw_service.restart_pending=0u;}
+    LightLock_Unlock(&d->source_lock);if(scope)ch_3ds_read_end(&d->backend);return status;
+}
+static int pause_read_begin(void *u){return ch_3ds_read_begin((Ch3dsBackend *)u);}
+static void pause_read_end(void *u){ch_3ds_read_end((Ch3dsBackend *)u);}
 int raw_device_startup(const RawDeviceHostOps *host){
-    ChInstallOps install_ops;RawServiceOps service_ops;ChInstallPoint points[5];
+    ChInstallOps install_ops;RawServiceOps service_ops;ChInstallPoint points[CH_MAX_INSTALL_POINTS];
     RawEnvironmentOps environment_ops;
     RawPauseOps pause_ops;
     RawPauseAudioOps audio_ops;
     uint32_t page,offset,probe,i;int status;
-    static const uint32_t sites[5]={CH_RAW_PRE_SITE,CH_POST_SCAN_SITE,CH_MARKER_SITE,CH_SOURCE_SITE,CH_PRESENT_SITE};
-    static const uint32_t words[5]={0xeb00332a,0xeb00182d,0xeb000a45,0xeb000ac7,0xeb001568};
+    static const uint32_t sites[CH_MAX_INSTALL_POINTS]={CH_RAW_PRE_SITE,CH_POST_SCAN_SITE,CH_MARKER_SITE,CH_SOURCE_SITE,CH_PRESENT_SITE,CH_RESTART_RECEIPT_SITE,CH_MENU_RESET_RECEIPT_SITE};
+    static const uint32_t words[CH_MAX_INSTALL_POINTS]={0xeb00332a,0xeb00182d,0xeb000a45,0xeb000ac7,0xeb001568,0xeb01f643,0xeb0033ef};
     if(device.worker||device.install.alias_mapped)return 0;
     memset(&device,0,sizeof(device));if(host)device.host=*host;device.backend.startup_owned=1;
     device.startup_phase=1;
@@ -934,15 +1151,19 @@ int raw_device_startup(const RawDeviceHostOps *host){
     device.source_diagnostic.version=5;
     device.source_diagnostic.result_enemy_first_index=UINT32_MAX;
     LightLock_Init(&device.job_lock);LightLock_Init(&device.hud_lock);LightLock_Init(&device.source_lock);
+    LightLock_Init(&device.step_trace_lock);
     raw_mailbox_init(&device.mailbox);ch_3ds_backend_ops(&device.backend,&install_ops,&device.binding.read);
     if(!raw_hud_3ds_sink_init(&device.screen,0,0)||!raw_present_prepare(&device.presentation,&device.binding.read))return 0;
     if(!raw_paused_3ds_init(&device.pause_backend,&device.presentation,&pause_ops)||
        !raw_paused_display_init(&device.pause_display,&pause_ops,0))return 0;
     device.pause_backend.clean_user=&device.screen;
     device.pause_backend.clean_overlay=raw_hud_3ds_restore_background;
+    device.pause_backend.read_scope_user=&device.backend;
+    device.pause_backend.read_scope_begin=pause_read_begin;
+    device.pause_backend.read_scope_end=pause_read_end;
     /* Pin audio code here without calling it or reading uninitialized runtime
        objects. Game callbacks become reachable only after pristine-title
-       identity admission and the original five-site installation succeed. */
+       identity admission and the original seven-site installation succeed. */
     if(!raw_paused_audio_3ds_init(&device.audio_backend,&device.binding.read,&audio_ops)||
        !raw_paused_audio_init(&device.pause_audio,&audio_ops))return 0;
     device.pause_audio_status=1;
@@ -952,7 +1173,7 @@ int raw_device_startup(const RawDeviceHostOps *host){
     device.startup_phase=3;
     if(!ch_3ds_hid_init(&device.backend))return 0;
     device.startup_phase=4;
-    service_ops=(RawServiceOps){&device,sample,keys,hud,wait_poll,submit,receive,source,first,present,completed,paused};
+    service_ops=(RawServiceOps){&device,sample,keys,hud,wait_poll,submit,receive,source,first,present,completed,paused,restart_session};
     if(!ch_raw_bind(&service_ops)){ch_3ds_hid_exit(&device.backend);return 0;}
     device.worker=threadCreate(worker,&device,0x10000,0x3e,-2,false);
     if(!device.worker){ch_3ds_hid_exit(&device.backend);return 0;}
@@ -960,8 +1181,8 @@ int raw_device_startup(const RawDeviceHostOps *host){
     page=(uint32_t)(uintptr_t)ch_raw_bridge&~4095u;
     offset=(uint32_t)(uintptr_t)ch_raw_bridge-page;
     probe=(uint32_t)(uintptr_t)ch_manual_alias_probe-page;
-    for(i=0;i<5;i++)points[i]=(ChInstallPoint){sites[i],words[i],offset};
-    status=ch_install_startup(&device.install,&install_ops,page,probe,points,5);
+    for(i=0;i<CH_MAX_INSTALL_POINTS;i++)points[i]=(ChInstallPoint){sites[i],words[i],offset};
+    status=ch_install_startup(&device.install,&install_ops,page,probe,points,CH_MAX_INSTALL_POINTS);
     device.install_status=status;device.startup_phase=6;
     if(status==CH_INSTALL_OK){
         device.startup_phase=7;
@@ -980,16 +1201,16 @@ int raw_device_startup(const RawDeviceHostOps *host){
 }
 void raw_device_startup_diagnostic(RawDeviceStartupDiagnostic *out,int32_t status){
     uint32_t i;
-    static const uint32_t sites[5]={CH_RAW_PRE_SITE,CH_POST_SCAN_SITE,CH_MARKER_SITE,CH_SOURCE_SITE,CH_PRESENT_SITE};
-    static const uint32_t original[5]={0xeb00332a,0xeb00182d,0xeb000a45,0xeb000ac7,0xeb001568};
+    static const uint32_t sites[CH_MAX_INSTALL_POINTS]={CH_RAW_PRE_SITE,CH_POST_SCAN_SITE,CH_MARKER_SITE,CH_SOURCE_SITE,CH_PRESENT_SITE,CH_RESTART_RECEIPT_SITE,CH_MENU_RESET_RECEIPT_SITE};
+    static const uint32_t original[CH_MAX_INSTALL_POINTS]={0xeb00332a,0xeb00182d,0xeb000a45,0xeb000ac7,0xeb001568,0xeb01f643,0xeb0033ef};
     if(!out)return;
-    memset(out,0,sizeof(*out));out->magic=0x47444843u;out->version=1;
+    memset(out,0,sizeof(*out));out->magic=0x47444843u;out->version=2;
     out->phase=device.startup_phase;out->caller_status=(uint32_t)status;
     out->install_status=device.install_status;
     out->source_page=device.install.source_page;out->alias_page=device.install.alias_page;
     out->point_count=device.install.point_count;out->attempted_count=device.install.attempted_count;
     out->alias_mapped=device.install.alias_mapped;out->poisoned=device.install.poisoned;
-    for(i=0;i<5;i++){
+    for(i=0;i<CH_MAX_INSTALL_POINTS;i++){
         out->sites[i]=sites[i];out->original_words[i]=original[i];
         out->installed_words[i]=device.install.installed_words[i];
         if(device.binding.read.read_bytes&&device.binding.read.read_bytes(device.binding.read.user,

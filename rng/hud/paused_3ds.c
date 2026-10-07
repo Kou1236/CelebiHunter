@@ -29,7 +29,7 @@ static int pause_contract(const RawPause3ds *b){uint32_t i,words[44];
     }
     return 1;
 }
-static int observe(void *user,RawPauseSnapshot *out){RawPause3ds *b=user;RawPauseSnapshot s,t;uint32_t slot;
+static int observe_read(RawPause3ds *b,RawPauseSnapshot *out){RawPauseSnapshot s,t;uint32_t slot;
     if(!out||!b)return -1;
     b->diagnostic.stage=RAW_PAUSE_3DS_OBSERVE;b->diagnostic.observes++;
     if(!raw_present_contract_current(b->binding)||!pause_contract(b))return failed(b,RAW_PAUSE_3DS_OBSERVE,1);
@@ -57,6 +57,14 @@ static int observe(void *user,RawPauseSnapshot *out){RawPause3ds *b=user;RawPaus
        t.graphics_busy!=s.graphics_busy||t.top_epoch!=s.top_epoch||t.queue_control!=s.queue_control||
        t.event_queue!=s.event_queue||t.shared_base!=s.shared_base||t.thread_id!=s.thread_id)return 0;
     *out=s;return 1;
+}
+static int observe(void *user,RawPauseSnapshot *out){RawPause3ds *b=user;int scoped=0,result;
+    if(!b||!out)return -1;
+    if(b->read_scope_begin&&b->read_scope_end)
+        scoped=b->read_scope_begin(b->read_scope_user)==1;
+    result=observe_read(b,out);
+    if(scoped)b->read_scope_end(b->read_scope_user);
+    return result;
 }
 static int mapping(RawPause3ds *owner,const RawPauseBuffer *b,uint32_t *physical){
     MemInfo m;PageInfo page;uint32_t offset,pa0=0,pa,last;Result result;
@@ -134,19 +142,19 @@ static int flush(void *user,const RawPauseBuffer *b,uint32_t bytes){RawPause3ds 
     if(R_FAILED(result))return failed(owner,RAW_PAUSE_3DS_FLUSH,2);
     owner->diagnostic.flushes++;return 1;
 }
-static int publish(void *user,const RawPauseSnapshot *expected,const RawPauseRecord *r){
+static int publish(void *user,const RawPauseSnapshot *expected,const RawPauseRecord *r,uint32_t *epoch){
     RawPause3ds *b=user;RawPauseSnapshot now;int result;
     typedef void (*OriginalPresent)(uint32_t,uint32_t,const void *,const void *,uint32_t,uint32_t,uint32_t);
-    if(!b||!expected||!r)return -1;
+    if(!b||!expected||!r||!epoch)return -1;
     if(!raw_present_contract_current(b->binding))return failed(b,RAW_PAUSE_3DS_PUBLISH,1);
     if(expected->queue_control&0x00ffff00u)return 0;
     result=observe(b,&now);if(result!=1)return result;
-    if(memcmp(&now,expected,sizeof(now))||now.graphics_busy||(now.control&0xff00)||
-       (now.queue_control&0x00ffff00u))return 0;
+    if(!raw_pause_snapshot_same_image(expected,&now))return 0;
     /* GSPGPU_FramebufferInfo is a VA record. The original executable writer
      * copies these seven arguments without physical conversion or engine work. */
     ((OriginalPresent)(uintptr_t)RAW_PRESENT_TARGET)(0,r->swap,(const void *)(uintptr_t)r->fb_a,
         (const void *)(uintptr_t)r->fb_b,r->stride,r->format,r->display_select);
+    *epoch=now.top_epoch;
     b->diagnostic.publishes++;b->diagnostic.stage=RAW_PAUSE_3DS_PUBLISH;
     return 1;
 }

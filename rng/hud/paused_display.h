@@ -12,6 +12,24 @@ typedef struct {
        queue_control packs head/count/error; the snapshot checks both reads. */
     uint32_t event_queue,shared_base,thread_id,queue_control;
 } RawPauseSnapshot;
+/* Compare independently coherent receipts in expected/current order. Native
+ * dequeues can advance an empty relay head without changing the source image.
+ * Internal paired-read checks and display-event lifetime fences remain exact. */
+static inline int raw_pause_snapshot_same_image(const RawPauseSnapshot *a,const RawPauseSnapshot *b){
+    uint32_t delta;
+    if(!a||!b||a->graphics_busy||b->graphics_busy||(a->control&0xff00u)||(b->control&0xff00u)||
+       (a->queue_control&0x00ffff00u)||(b->queue_control&0x00ffff00u)||
+       (a->queue_control&0xffu)>=52u||(b->queue_control&0xffu)>=52u||
+       (a->queue_control&0xffffff00u)!=(b->queue_control&0xffffff00u)||
+       a->top_epoch>=UINT32_C(0x7fffffff)||b->top_epoch>=UINT32_C(0x7fffffff))return 0;
+    delta=b->top_epoch>=a->top_epoch?b->top_epoch-a->top_epoch:
+        UINT32_C(0x7fffffff)-a->top_epoch+b->top_epoch;
+    return delta<=UINT32_C(0x3fffffff)&&a->context==b->context&&a->descriptor==b->descriptor&&
+        a->control==b->control&&a->event_queue==b->event_queue&&a->shared_base==b->shared_base&&
+        a->thread_id==b->thread_id&&a->record.swap==b->record.swap&&a->record.fb_a==b->record.fb_a&&
+        a->record.fb_b==b->record.fb_b&&a->record.stride==b->record.stride&&a->record.format==b->record.format&&
+        a->record.display_select==b->record.display_select&&a->record.zero==b->record.zero;
+}
 typedef struct {
     uint8_t *pixels;
     uint32_t vaddr,paddr,bytes;
@@ -31,8 +49,9 @@ typedef struct {
     int (*release)(void *,RawPauseBuffer *);
     int (*flush)(void *,const RawPauseBuffer *,uint32_t);
     /* Exact 14AA24 seven-argument top publication. Returns 1 only after its
-     * record write. 0/-1 MUST mean no publication occurred. Never engine/HID. */
-    int (*publish)(void *,const RawPauseSnapshot *,const RawPauseRecord *);
+     * record write and then writes the final observed epoch to non-NULL out.
+     * 0/-1 mean no publication and leave out unchanged. Never engine/HID. */
+    int (*publish)(void *,const RawPauseSnapshot *,const RawPauseRecord *,uint32_t *);
     /* Owned scan boundary: coherent, read-only original image. Never a
        currently leased display slot. 0 retries without any publication. */
     int (*background)(void *,const RawPauseSnapshot *,uint8_t *,uint32_t);
@@ -70,6 +89,9 @@ typedef struct {
     /* Immutable for this pause. BSS storage, never the game-thread stack. */
     uint32_t background_bytes;
     uint8_t background[RAW_PAUSE_PIXEL_BYTES];
+    /* Preparation diagnostics only; never used as admission or lifetime state. */
+    uint32_t prepared_attempts,prepared_snapshot_retries,prepared_source_retries,native_publish_retries;
+    RawPauseSnapshot rejected_expected,rejected_current;
 } RawPausedDisplay;
 /* No allocation, service initialization, rendering, or native writes here. */
 int raw_paused_display_init(RawPausedDisplay *,const RawPauseOps *,const RawHudLayout *);

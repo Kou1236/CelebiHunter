@@ -1,4 +1,4 @@
-"""Build the 34-module C RNG implementation and its Luma 3GX loader."""
+"""Build the 35-module C RNG implementation and its Luma 3GX loader."""
 from __future__ import annotations
 
 import hashlib
@@ -22,10 +22,10 @@ def sha(path: Path) -> str:
 
 def inventory() -> tuple[dict, dict[str, str]]:
     manifest = json.loads((RNG / "build_sources.json").read_bytes())
-    preflight.require(manifest["version"] == "1.3.0", "Wrong RNG source manifest version")
+    preflight.require(manifest["version"] == "1.4.0", "Wrong RNG source manifest version")
     runtime, loader = manifest["runtime_sources"], manifest["loader_sources"]
-    preflight.require(len(runtime) == 34 and len(loader) == 3, "Expected 34 runtime and three loader sources")
-    preflight.require(manifest["sources"] == runtime + loader and len(set(runtime + loader)) == 37,
+    preflight.require(len(runtime) == 35 and len(loader) == 3, "Expected 35 runtime and three loader sources")
+    preflight.require(manifest["sources"] == runtime + loader and len(set(runtime + loader)) == 38,
                       "Source order/inventory is inconsistent")
     names = [*manifest["sources"], *manifest["headers"], manifest["linker_script"], *manifest["licenses"]]
     hashes = {}
@@ -135,7 +135,7 @@ def build() -> Path:
         preflight.require(all(sha(RNG / name) == digest for name, digest in hashes.items()),
                           "RNG inputs changed during packaging")
         (BUILD / "package_verification.json").write_text(json.dumps(packaged, indent=2) + "\n", encoding="utf8")
-        report.update(status="passed_rng_build_and_container_verification", runtime_source_count=34,
+        report.update(status="passed_rng_build_and_container_verification", runtime_source_count=35,
                       loader_source_count=3, object_sha256={obj.name: sha(obj) for obj in inputs},
                       all_runtime_exported_definitions_retained=True, runtime_exported_definitions=exports,
                       ELF_sha256=sha(elf), map_sha256=sha(mapfile), package_sha256=sha(output),

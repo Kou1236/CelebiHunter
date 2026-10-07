@@ -7,6 +7,7 @@ typedef struct {
     RawJob pending,ready_job;
     ManualPrediction ready_result;
     uint32_t pending_valid,ready_valid,running,stopped;
+    uint64_t minimum_epoch;
 } RawMailbox;
 void raw_mailbox_init(RawMailbox *);
 int raw_mailbox_submit(RawMailbox *,const RawJob *);
@@ -14,4 +15,7 @@ int raw_mailbox_take(RawMailbox *,RawJob *);
 int raw_mailbox_finish(RawMailbox *,const RawJob *,const ManualPrediction *);
 int raw_mailbox_receive(RawMailbox *,RawJob *,ManualPrediction *);
 void raw_mailbox_stop(RawMailbox *);
+/* Keep an in-flight private solver owned until finish(), then discard its
+   old receipt. Never reset its running flag while it can still publish. */
+void raw_mailbox_retire(RawMailbox *,uint64_t new_epoch);
 #endif

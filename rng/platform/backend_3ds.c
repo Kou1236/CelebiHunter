@@ -1,4 +1,5 @@
 #include <3ds.h>
+#include <string.h>
 #include "backend_3ds.h"
 extern Result svcMapProcessMemoryEx(Handle,uint32_t,Handle,uint32_t,uint32_t,uint32_t);
 extern Result svcUnmapProcessMemoryEx(Handle,uint32_t,uint32_t);
@@ -65,7 +66,7 @@ static int unmapalias(void *u,uint32_t a) {
 static int store(void *u,uint32_t a,uint32_t v) {
     uint32_t pa;Ch3dsBackend *s=u;
     if(!owned(u)||!s->identity_checked||!s->mapped_page||
-        !(a==CH_RAW_PRE_SITE||a==CH_POST_SCAN_SITE||a==CH_MARKER_SITE||a==CH_SOURCE_SITE||a==CH_PRESENT_SITE)||
+        !(a==CH_RAW_PRE_SITE||a==CH_POST_SCAN_SITE||a==CH_MARKER_SITE||a==CH_SOURCE_SITE||a==CH_PRESENT_SITE||a==CH_RESTART_RECEIPT_SITE||a==CH_MENU_RESET_RECEIPT_SITE)||
         !readable(u,a,4u)||!(pa=svcConvertVAToPA((const void *)a,true)))return 0;
     *(volatile uint32_t *)(pa|0x80000000u)=v;return 1;
 }
@@ -112,4 +113,11 @@ void ch_3ds_read_end(Ch3dsBackend *s) {
     s->last_mapping_hits=s->read_scope.hits;
     s->last_mapping_failures=s->read_scope.failures;
     ch_read_scope_end(&s->read_scope);s->scoped_read_calls=0u;
+}
+int ch_3ds_worker_read_ops(const Ch3dsBackend *s,Ch3dsBackend *local,ChReadOps *r){
+    if(!s||!local||local==s||!r||s->startup_owned||!s->identity_checked||!s->mapped_page)return 0;
+    memset(local,0,sizeof(*local));
+    local->identity_checked=s->identity_checked;local->mapped_page=s->mapped_page;
+    local->source_page=s->source_page;
+    *r=(ChReadOps){local,readbytes,0};return 1;
 }

@@ -13,6 +13,9 @@ typedef struct {
     uint32_t host_held, host_down, host_up, host_intersection;
     uint32_t input_enable, guest_mask, script_final_prompt;
     uint64_t scene_epoch;
+    /* Paired original VC front-end bytes. Mode 1 and scan gate != 2 reach
+       the 104374 physical-game scan; other checked modes may omit it. */
+    uint32_t frontend_valid,frontend_mode,frontend_scan_gate;
 } RawSample;
 enum { RAW_EVENT_BEFORE_SCAN=1,RAW_EVENT_AFTER_SCAN=2,
        RAW_EVENT_ENGINE_ENTRY=3,RAW_EVENT_SCHEDULER=4 };
@@ -56,11 +59,19 @@ typedef struct {
     uint32_t display_pending,display_error;
     uint32_t query_status,refresh_needed,step_by_physical_a;
     uint32_t search_started,search_requested;
+    uint32_t frontend_suspended;
     uint32_t query_failure_detail,query_submitted_counter,query_returned_counter,query_result_target;
     uint32_t source_bg;
     /* Actual aligned first-scheduler timing, copied into read-only jobs. */
     CQWaitingState waiting;
     uint32_t waiting_counter,waiting_valid;
+    /* Retain a conditional target while a bounded aligned read is rechecked.
+       It cannot authorize a worker result or an effective original A. */
+    uint32_t waiting_recheck;
+    /* A checked VC Restart retires the old engine session. Loading samples
+       cannot establish a control baseline until an actual complete ordinary
+       scan/engine/counter unit is observed in the new epoch. */
+    uint32_t restart_bootstrap_pending,restart_bootstrap_unit_supported;
 } RawRuntime;
 
 /* A transient running-unit mismatch expires the forecast, but can retain an
@@ -74,6 +85,15 @@ static inline int raw_runtime_source_recovery_pending(const RawRuntime *r){
 }
 
 void raw_runtime_init(RawRuntime *,uint32_t physical_already_held);
+/* Platform must first verify a real original native reset receipt and retire
+   its environment/result/mailbox ownership. A larger epoch is never inferred
+   from a backwards counter. Refuse an owned pause/step or an old epoch. */
+int raw_runtime_restart_checked(RawRuntime *,uint64_t new_epoch,uint32_t physical_already_held);
+static inline int raw_runtime_restart_eligible(const RawRuntime *r,uint64_t epoch){
+    return r&&epoch&&epoch>r->scene_epoch&&r->runtime==CH_RUNTIME_RUNNING&&
+        !r->controls.pending.kind&&!r->display_pending&&!r->display_error&&
+        r->fault!=RAW_FAULT_ENVIRONMENT&&r->fault!=RAW_FAULT_DISPLAY;
+}
 /* Called on emulator thread at the original BL 1042F0, before HID refresh.
  * No scan is logged until the player has actually let this call continue.
  */

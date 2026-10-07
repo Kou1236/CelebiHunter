@@ -1,6 +1,6 @@
 # Building
 
-RNG v1.1.0 is built from the C/assembly sources in `rng/`. Reset keeps the v1.0.0 Rust core and C/assembly entry layer.
+RNG v1.4.0 is built from the C/assembly sources in `rng/`. Reset keeps the v1.0.0 Rust core and C/assembly entry layer.
 
 ## Dependencies
 
@@ -65,7 +65,7 @@ rustc --test --edition 2021 tests/celebi.rs -O -o build/celebi_tests
 build/celebi_tests
 ```
 
-`tests/celebi_manual.rs` tests the historical v1.0.0 RNG implementation, not RNG v1.1.0. CI runs the new C suite and the Reset tests.
+`tests/celebi_manual.rs` tests the historical v1.0.0 RNG implementation, not RNG v1.4.0. CI runs the new C suite and the Reset tests.
 
 ## Package a release
 

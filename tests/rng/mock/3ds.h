@@ -9,6 +9,7 @@ void LightLock_Init(LightLock *);
 void LightLock_Lock(LightLock *);
 void LightLock_Unlock(LightLock *);
 int32_t svcSleepThread(int64_t);
+uint64_t svcGetSystemTick(void);
 Thread threadCreate(void (*)(void *),void *,size_t,int32_t,int32_t,bool);
 int32_t threadJoin(Thread,uint64_t);
 void threadFree(Thread);

@@ -1,7 +1,7 @@
 #include "platform.h"
 #include <string.h>
-static const uint32_t allowed_sites[5]={CH_RAW_PRE_SITE,CH_POST_SCAN_SITE,CH_MARKER_SITE,CH_SOURCE_SITE,CH_PRESENT_SITE};
-static const uint32_t pristine_words[5]={0xeb00332au,0xeb00182du,0xeb000a45u,0xeb000ac7u,0xeb001568u};
+static const uint32_t allowed_sites[CH_MAX_INSTALL_POINTS]={CH_RAW_PRE_SITE,CH_POST_SCAN_SITE,CH_MARKER_SITE,CH_SOURCE_SITE,CH_PRESENT_SITE,CH_RESTART_RECEIPT_SITE,CH_MENU_RESET_RECEIPT_SITE};
+static const uint32_t pristine_words[CH_MAX_INSTALL_POINTS]={0xeb00332au,0xeb00182du,0xeb000a45u,0xeb000ac7u,0xeb001568u,0xeb01f643u,0xeb0033efu};
 static const uint32_t aliases[4]={0x02000000u,0x01f00000u,0x01e00000u,0x01d00000u};
 
 int ch_encode_bl(uint32_t site,uint32_t target,uint32_t *word) {
@@ -13,7 +13,7 @@ int ch_encode_bl(uint32_t site,uint32_t target,uint32_t *word) {
 static int valid_point(const ChInstallPoint *p) {
     uint32_t i;
     if((p->bridge_offset&3u)||p->bridge_offset>=CH_ALIAS_PAGE_SIZE)return 0;
-    for(i=0;i<5u;i++)if(p->site==allowed_sites[i])
+    for(i=0;i<CH_MAX_INSTALL_POINTS;i++)if(p->site==allowed_sites[i])
         return p->expected_original==pristine_words[i];
     return 0;
 }

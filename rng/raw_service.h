@@ -47,12 +47,19 @@ typedef struct {
        display write, free, input, counter or engine operations. action4 keeps
        the current private image/audio mute for an explicit one-unit L step. */
     int (*paused_display)(void *,const ChNativeContext *,const RawRuntime *,uint32_t action);
+    /* Completed original VC Restart only. Adapter verifies native reset
+       readback, releases RTC and retires external session ownership before
+       applying raw_runtime_restart_checked. No game command or counter write. */
+    int (*restart_session)(void *,const ChNativeContext *,RawRuntime *);
 } RawServiceOps;
 typedef struct {
     RawRuntime runtime;
     RawServiceOps ops;
     uint32_t initialized,pending_marker,display_owned;
     uint32_t display_exit_polls,display_abandoned;
+    /* A native touchscreen Reset worker publishes a verified receipt. Only
+       the next main-thread pre-HID call may consume it and retire runtime. */
+    volatile uint32_t restart_pending;
 } RawService;
 int raw_service_init(RawService *,const RawServiceOps *);
 uint32_t raw_service_route(RawService *,const ChNativeContext *);
